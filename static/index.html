@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Turnkey PCBA Studio - Gerber Analyzer & Smart BOM Sourcing</title>
   <meta name="description" content="AI-Powered PCB Gerber Analyzer & Smart BOM Sourcing Tool. Instant PCB layer count, pad analysis (SMD/THT), assembly complexity score (0-100%), assembly cost estimation, and preferred supplier pricing comparison for Robu, Sunrom, and ElectronicsComp.">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
@@ -35,15 +35,19 @@
           📐 Gerber & Assembly
         </button>
         <button class="tab-btn" id="tabBtnBom" onclick="switchTab('bom')" role="tab">
-          📋 BOM Sourcing & Prices
+          📋 BOM Sourcing & Pad Calculator
         </button>
         <button class="tab-btn" id="tabBtnTurnkey" onclick="switchTab('turnkey')" role="tab">
           💰 Turnkey PCBA Total
         </button>
       </nav>
 
-      <!-- Currency & Theme Controls -->
+      <!-- Currency, Theme & Engine Controls -->
       <div class="header-controls">
+        <button class="backend-status-pill" id="backendStatusBtn" onclick="openBackendModal()" title="Engine Status & Cloud Backend Config">
+          <span class="status-dot online" id="statusDot"></span>
+          <span id="backendStatusText">Engine: Local</span>
+        </button>
         <button class="currency-toggle" id="currencyToggleBtn" onclick="toggleCurrency()" title="Toggle Currency INR (₹) / USD ($)">
           <span id="currencySymbolText">₹</span> <span id="currencyCodeText">INR</span>
         </button>
@@ -312,8 +316,38 @@
       <div class="cost-calculator-panel glass">
         <!-- Interactive Inputs -->
         <div class="calc-inputs">
-          <div class="section-subtitle">
-            <span>⚙️ Assembly Cost Parameters</span>
+          <!-- Pad Count Calculation Source Selector -->
+          <div class="input-group" style="background: rgba(0, 229, 255, 0.04); padding: 0.85rem 1rem; border-radius: var(--radius-md); border: 1px solid rgba(0, 229, 255, 0.2);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+              <label style="margin-bottom: 0; font-weight: 600; color: var(--accent-cyan); font-size: 0.82rem;">📊 Pad Count Calculation Source:</label>
+              <span id="activePadSourceBadge" class="badge-source">📐 Gerber RS-274X</span>
+            </div>
+            <div class="pad-source-pills">
+              <button type="button" class="pad-source-btn active" id="btnSourceGerber" onclick="setPadSource('gerber')">
+                📐 Gerber File (<span id="sourceGerberPadsBadge">1,495</span> Pads)
+              </button>
+              <button type="button" class="pad-source-btn" id="btnSourceBom" onclick="setPadSource('bom')">
+                📋 BOM Analysis (<span id="sourceBomPadsBadge">886</span> Pads)
+              </button>
+              <button type="button" class="pad-source-btn" id="btnSourceManual" onclick="setPadSource('manual')">
+                ✏️ Custom Manual
+              </button>
+            </div>
+            <div id="sourceExplanationText" style="font-size: 0.74rem; color: var(--text-secondary); margin-top: 0.45rem;">
+              Source: RS-274X Gerber Solder Paste (1,317 SMD pads) + Drill Hits (178 THT pins).
+            </div>
+
+            <!-- Manual Pad Override Inputs (Shown when source is manual) -->
+            <div id="manualPadsRow" style="display: none; margin-top: 0.75rem; gap: 0.75rem; display: none;">
+              <div style="flex: 1;">
+                <label style="font-size: 0.72rem; color: var(--text-muted);">SMD Pads:</label>
+                <input type="number" id="customSmdPadsInput" class="form-control" style="padding: 0.35rem 0.6rem; font-size: 0.85rem;" value="1317" oninput="onCustomPadsChange()">
+              </div>
+              <div style="flex: 1;">
+                <label style="font-size: 0.72rem; color: var(--text-muted);">THT Pins:</label>
+                <input type="number" id="customThtPinsInput" class="form-control" style="padding: 0.35rem 0.6rem; font-size: 0.85rem;" value="178" oninput="onCustomPadsChange()">
+              </div>
+            </div>
           </div>
 
           <!-- Quantity of Boards -->
@@ -441,6 +475,78 @@
         </div>
       </div>
 
+      <!-- BOM Component Pad Analysis & Manual Feed Card -->
+      <div class="bom-pad-analyzer-card glass" id="bomPadAnalyzerCard">
+        <div class="bom-pad-header">
+          <div>
+            <div class="badge-ai" style="margin-bottom: 0.35rem;">AI COMPONENT PAD RECOGNITION ENGINE</div>
+            <h3 style="font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+              <span>⚡ Component Pad Analysis & SMT/THT Breakdown</span>
+            </h3>
+            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;">
+              Calculates solder pads directly from component quantities, footprints, and MPN pinouts when Gerber is not provided.
+            </p>
+          </div>
+          <div class="bom-pad-actions">
+            <button class="btn btn-warning" id="btnOpenManualFeed" onclick="openManualFeedModal()">
+              📝 Manual Feed & Review Pads (<span id="reviewCountBadge">0</span>)
+            </button>
+            <button class="btn btn-primary" id="btnApplyBomPadsToAssembly" onclick="applyBomPadsToAssembly()">
+              🚀 Apply Pads to Assembly Cost
+            </button>
+          </div>
+        </div>
+
+        <!-- 4 Metric Cards for BOM Pads -->
+        <div class="dashboard-grid" style="margin-top: 1rem; margin-bottom: 0.5rem;">
+          <div class="metric-card glass" style="background: rgba(0, 229, 255, 0.05); border-color: rgba(0, 229, 255, 0.25);">
+            <div class="metric-header">
+              <span class="metric-title">Total Component Pads</span>
+              <div class="metric-icon">⚡</div>
+            </div>
+            <div class="metric-value" id="dispBomPadTotal" style="color: var(--accent-cyan);">-- Pads</div>
+            <div class="metric-sub" id="dispBomPadTotalSub">Across -- components</div>
+          </div>
+
+          <div class="metric-card glass">
+            <div class="metric-header">
+              <span class="metric-title">SMD Solder Pads</span>
+              <div class="metric-icon">🤖</div>
+            </div>
+            <div class="metric-value" id="dispBomPadSmd" style="color: var(--accent-amber);">-- SMD</div>
+            <div class="metric-sub">Automated Pick & Place</div>
+          </div>
+
+          <div class="metric-card glass">
+            <div class="metric-header">
+              <span class="metric-title">Through-Hole (THT) Pins</span>
+              <div class="metric-icon">🔌</div>
+            </div>
+            <div class="metric-value" id="dispBomPadTht" style="color: var(--accent-purple);">-- THT</div>
+            <div class="metric-sub">Hand / Wave Soldering</div>
+          </div>
+
+          <div class="metric-card glass">
+            <div class="metric-header">
+              <span class="metric-title">Package Recognition Status</span>
+              <div class="metric-icon">🎯</div>
+            </div>
+            <div class="metric-value" id="dispBomPadStatus" style="color: var(--accent-emerald);">--%</div>
+            <div class="metric-sub" id="dispBomPadStatusSub">All packages verified</div>
+          </div>
+        </div>
+
+        <!-- Unresolved Alert Banner (shown only if unresolved > 0) -->
+        <div class="unresolved-alert" id="unresolvedAlertBanner" style="display: none;">
+          <div class="alert-icon">⚠️</div>
+          <div class="alert-content">
+            <strong><span id="unresolvedAlertCount">0</span> Component(s) Require Manual Pad Feed:</strong>
+            <span>Some footprints are ambiguous or missing standard pin definitions. You can manually enter their pad counts or verify via manufacturer datasheets.</span>
+          </div>
+          <button class="btn btn-sm btn-warning" onclick="openManualFeedModal('unresolved')">Review Now ↗</button>
+        </div>
+      </div>
+
       <!-- Sourcing Configuration Bar -->
       <div class="sourcing-config-bar glass">
         <div class="section-subtitle">
@@ -543,8 +649,13 @@
         <div style="display: flex; gap: 0.5rem; align-items: center; flex: 1; max-width: 400px;">
           <input type="text" id="bomSearchInput" class="form-control" placeholder="🔍 Search RefDes, description, package, SKU..." oninput="filterBomTable()">
         </div>
-        <div style="font-size: 0.8rem; color: var(--text-muted);" id="tableRowCountText">
-          Showing 0 items
+        <div style="display: flex; gap: 0.75rem; align-items: center;">
+          <button class="btn btn-sm btn-secondary" onclick="openManualFeedModal()" title="View and edit pad counts for all components">
+            📝 Review / Feed Pads
+          </button>
+          <div style="font-size: 0.8rem; color: var(--text-muted);" id="tableRowCountText">
+            Showing 0 items
+          </div>
         </div>
       </div>
 
@@ -558,6 +669,10 @@
               <th>Description / Value</th>
               <th>Package</th>
               <th>Qty</th>
+              <th>Pads/Unit</th>
+              <th>Type</th>
+              <th>Line Pads</th>
+              <th>Datasheet</th>
               <th>Lowest Price Supplier</th>
               <th>Website Part # (SKU)</th>
               <th>Unit Price</th>
@@ -568,7 +683,7 @@
           </thead>
           <tbody id="bomTableBody">
             <tr>
-              <td colspan="11" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+              <td colspan="15" style="text-align: center; padding: 3rem; color: var(--text-muted);">
                 Upload a BOM or click "Load Sample BOM" to view components and match lowest prices.
               </td>
             </tr>
@@ -703,11 +818,140 @@
     </div>
   </div>
 
+  <!-- Modal for BOM Component Pad Review & Manual Feed -->
+  <div class="modal-overlay" id="manualFeedModal">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3 style="font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+            <span>📝 BOM Component Pad Review & Manual Feed</span>
+            <span class="badge-ai" style="font-size: 0.65rem;">AI + MANUAL VERIFIED</span>
+          </h3>
+          <span style="font-size: 0.8rem; color: var(--text-secondary);">
+            Verify and adjust pad counts per unit, toggle SMD/THT technology, or lookup manufacturer pinouts via direct datasheet search.
+          </span>
+        </div>
+        <button class="modal-close" onclick="closeManualFeedModal()">&times;</button>
+      </div>
+
+      <!-- Filters & Quick Search -->
+      <div class="modal-filters">
+        <button class="modal-filter-pill active" id="filterPillAll" onclick="filterManualFeedTable('all')">
+          All Components (<span id="mfCountAll">0</span>)
+        </button>
+        <button class="modal-filter-pill" id="filterPillUnresolved" onclick="filterManualFeedTable('unresolved')" style="border-color: rgba(255, 171, 0, 0.4);">
+          ⚠️ Needs Verification (<span id="mfCountUnresolved">0</span>)
+        </button>
+        <button class="modal-filter-pill" id="filterPillSmd" onclick="filterManualFeedTable('smd')">
+          🤖 SMD Only (<span id="mfCountSmd">0</span>)
+        </button>
+        <button class="modal-filter-pill" id="filterPillTht" onclick="filterManualFeedTable('tht')">
+          🔌 THT Only (<span id="mfCountTht">0</span>)
+        </button>
+
+        <div style="margin-left: auto; min-width: 240px;">
+          <input type="text" id="manualFeedSearchInput" class="form-control" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" placeholder="🔍 Filter by RefDes, Footprint, MPN..." oninput="renderManualFeedTable()">
+        </div>
+      </div>
+
+      <!-- Scrollable Review Table -->
+      <div class="manual-table-container">
+        <table class="manual-table">
+          <thead>
+            <tr>
+              <th style="width: 40px;">#</th>
+              <th>Designator</th>
+              <th>Description / MPN</th>
+              <th>Footprint / Case</th>
+              <th style="width: 50px;">Qty</th>
+              <th style="width: 85px; text-align: center;">Pads/Unit</th>
+              <th style="width: 80px; text-align: center;">Type</th>
+              <th style="width: 75px; text-align: right;">Total Pads</th>
+              <th>Package / Resolution</th>
+              <th style="width: 140px; text-align: center;">Datasheet & Pinout</th>
+            </tr>
+          </thead>
+          <tbody id="manualFeedTableBody">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Modal Footer Summary & Actions -->
+      <div class="modal-footer-bar">
+        <div style="font-size: 0.82rem; color: var(--text-secondary); display: flex; gap: 1.25rem;">
+          <span>Total Pads: <strong id="mfTotalPads" style="color: var(--accent-cyan);">0</strong></span>
+          <span>SMD: <strong id="mfTotalSmd" style="color: var(--accent-amber);">0</strong></span>
+          <span>THT: <strong id="mfTotalTht" style="color: var(--accent-purple);">0</strong></span>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+          <button class="btn btn-secondary" onclick="resetManualFeedToAuto()" style="font-size: 0.85rem; padding: 0.45rem 0.9rem;">
+            🔄 Reset to Auto-Detected
+          </button>
+          <button class="btn btn-primary" onclick="saveManualFeedChanges()" style="font-size: 0.85rem; padding: 0.45rem 1.2rem;">
+            💾 Save & Apply to PCBA Cost
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for Backend Connection & Engine Configuration -->
+  <div class="modal-overlay" id="backendConfigModal">
+    <div class="modal-box" style="max-width: 560px;">
+      <div class="modal-header">
+        <div>
+          <h3 style="font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+            <span>🌐 Backend Engine & Cloud Connection</span>
+          </h3>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">Configure connection to FastAPI backend or use standalone client engine</span>
+        </div>
+        <button class="modal-close" onclick="closeBackendModal()">&times;</button>
+      </div>
+
+      <div style="margin-top: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; background: var(--bg-input); padding: 0.85rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 1rem;">
+          <span class="status-dot" id="modalStatusDot" style="width: 12px; height: 12px;"></span>
+          <div>
+            <div style="font-size: 0.85rem; font-weight: 600;" id="modalEngineStatusTitle">Checking backend status...</div>
+            <div style="font-size: 0.75rem; color: var(--text-secondary);" id="modalEngineStatusSub">Testing connection to API server</div>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label style="font-size: 0.8rem; font-weight: 600;">Custom Backend API URL (e.g. Render / Localhost):</label>
+          <input type="text" id="backendUrlInput" class="form-control" placeholder="http://127.0.0.1:8000 or https://your-app.onrender.com" value="">
+          <span style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.3rem;">
+            Leave blank to auto-detect localhost. Enter your Render service URL if using GitHub Pages.
+          </span>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
+          <button class="btn btn-secondary" onclick="testBackendConnection()" style="flex: 1;">
+            🔍 Test Connection
+          </button>
+          <button class="btn btn-primary" onclick="saveBackendConfig()" style="flex: 1;">
+            💾 Save & Connect
+          </button>
+        </div>
+
+        <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border-color); font-size: 0.75rem; color: var(--text-secondary);">
+          <strong>💡 Note for Hosted Links (GitHub Pages):</strong>
+          <p style="margin-top: 0.3rem;">
+            GitHub Pages is a static host. CIRCUIT IQ automatically runs its smart client-side BOM parser and pad calculator in offline standalone mode! For live web scraping of supplier stores, connect your free Render backend.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div class="toast" id="toastNotification">
     <span id="toastMessage">Action completed!</span>
   </div>
 
-  <script src="/js/app.js"></script>
+  <script src="js/sample_gerber_data.js"></script>
+  <script src="js/sample_bom_data.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>

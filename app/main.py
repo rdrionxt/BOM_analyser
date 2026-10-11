@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from app.gerber_analyzer import analyze_gerber_archive
 from app.assembly_calculator import calculate_assembly_cost
 from app.bom_parser import parse_bom_file
+from app.bom_pad_calculator import calculate_bom_pads
 from app.component_sourcer import source_entire_bom
 from app.excel_exporter import export_bom_to_excel
 
@@ -51,6 +52,10 @@ class AssemblyCostRequest(BaseModel):
     currency: str = "INR"
 
 
+class CalculateBomPadsRequest(BaseModel):
+    items: List[dict]
+
+
 class SourceBOMRequest(BaseModel):
     items: List[dict]
     preferred_keywords: List[str] = ["robu", "sunrom", "electronicscomp"]
@@ -60,6 +65,12 @@ class SourceBOMRequest(BaseModel):
 class ExportBOMRequest(BaseModel):
     sourced_data: dict
     project_name: str = "PCBA Project"
+
+
+@app.get("/api/health")
+def health_endpoint():
+    """Health check endpoint for Render/Railway/Docker containers."""
+    return {"status": "ok", "app": "Turnkey PCBA Studio & Smart BOM Sourcing Engine"}
 
 
 @app.post("/api/analyze-gerber")
@@ -119,10 +130,15 @@ def calculate_assembly_endpoint(req: AssemblyCostRequest):
 
 @app.post("/api/parse-bom")
 def parse_bom_endpoint(file: UploadFile = File(...)):
-    """Parses uploaded BOM (CSV or Excel) and normalizes columns."""
+    """Parses uploaded BOM (CSV or Excel) and calculates component pad counts."""
     try:
         content = file.file.read()
         result = parse_bom_file(content, filename=file.filename)
+        if result.get("status") == "success" and result.get("items"):
+            pad_calc = calculate_bom_pads(result["items"])
+            result["pad_analysis"] = pad_calc["summary"]
+            result["items"] = pad_calc["items"]
+            result["unresolved_items"] = pad_calc["unresolved_items"]
         result["filename"] = file.filename
         return JSONResponse(content=result)
     except Exception as e:
@@ -131,16 +147,31 @@ def parse_bom_endpoint(file: UploadFile = File(...)):
 
 @app.get("/api/sample-bom")
 def get_sample_bom():
-    """Loads and parses the built-in sample BOM (AX60 project)."""
+    """Loads and parses the built-in sample BOM (AX60 project) with pad estimation."""
     if not os.path.exists(SAMPLE_BOM_PATH):
         raise HTTPException(status_code=404, detail="Sample BOM file not found.")
 
     try:
         result = parse_bom_file(SAMPLE_BOM_PATH, filename="Audio_Meter_Basic_BOM.csv")
+        if result.get("status") == "success" and result.get("items"):
+            pad_calc = calculate_bom_pads(result["items"])
+            result["pad_analysis"] = pad_calc["summary"]
+            result["items"] = pad_calc["items"]
+            result["unresolved_items"] = pad_calc["unresolved_items"]
         result["filename"] = "Audio_Meter_Basic_BOM.csv (Built-in Sample)"
         return JSONResponse(content=result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/calculate-bom-pads")
+def calculate_bom_pads_endpoint(req: CalculateBomPadsRequest):
+    """Calculates pad counts (SMD, THT, Total) from BOM components, supporting manual feed/overrides."""
+    try:
+        result = calculate_bom_pads(req.items)
+        return JSONResponse(content=result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to calculate BOM pads: {str(e)}")
 
 
 @app.post("/api/source-bom")
