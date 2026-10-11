@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Turnkey PCBA Studio - Gerber Analyzer & Smart BOM Sourcing</title>
+  <meta name="description" content="AI-Powered PCB Gerber Analyzer & Smart BOM Sourcing Tool. Instant PCB layer count, pad analysis (SMD/THT), assembly complexity score (0-100%), assembly cost estimation, and preferred supplier pricing comparison for Robu, Sunrom, and ElectronicsComp.">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Sticky Engineering Header -->
+  <header>
+    <div class="header-container">
+      <div class="logo-area">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="20" rx="4"></rect>
+            <path d="M6 6h4v4H6zM14 6h4v4h-4zM6 14h4v4H6zM14 14h4v4h-4z"></path>
+            <line x1="10" y1="8" x2="14" y2="8"></line>
+            <line x1="8" y1="10" x2="8" y2="14"></line>
+            <line x1="16" y1="10" x2="16" y2="14"></line>
+            <line x1="10" y1="16" x2="14" y2="16"></line>
+          </svg>
+        </div>
+        <div class="logo-text">
+          <h1>CIRCUIT IQ <span class="badge-ai">AI-PCBA</span></h1>
+          <span>Turnkey Gerber Analyzer & BOM Sourcing</span>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="nav-tabs" role="tablist">
+        <button class="tab-btn active" id="tabBtnGerber" onclick="switchTab('gerber')" role="tab">
+          📐 Gerber & Assembly
+        </button>
+        <button class="tab-btn" id="tabBtnBom" onclick="switchTab('bom')" role="tab">
+          📋 BOM Sourcing & Pad Calculator
+        </button>
+        <button class="tab-btn" id="tabBtnTurnkey" onclick="switchTab('turnkey')" role="tab">
+          💰 Turnkey PCBA Total
+        </button>
+      </nav>
+
+      <!-- Currency, Theme & Engine Controls -->
+      <div class="header-controls">
+        <button class="backend-status-pill" id="backendStatusBtn" onclick="openBackendModal()" title="Engine Status & Cloud Backend Config">
+          <span class="status-dot online" id="statusDot"></span>
+          <span id="backendStatusText">Engine: Local</span>
+        </button>
+        <button class="currency-toggle" id="currencyToggleBtn" onclick="toggleCurrency()" title="Toggle Currency INR (₹) / USD ($)">
+          <span id="currencySymbolText">₹</span> <span id="currencyCodeText">INR</span>
+        </button>
+        <button class="theme-toggle" id="themeToggleBtn" onclick="toggleTheme()" title="Toggle Theme">
+          🌓
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main View Area -->
+  <main>
+
+    <!-- ==================== TAB 1: GERBER ANALYZER & ASSEMBLY COST ==================== -->
+    <section id="tabGerber" class="tab-content active" role="tabpanel">
+
+      <!-- Upload Gerber Drag & Drop -->
+      <div class="dropzone glass" id="gerberDropzone">
+        <input type="file" id="gerberFileInput" accept=".zip,.gbr,.gtl,.gbl,.drl" style="display:none;">
+        <div class="dropzone-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </div>
+        <h3 id="gerberStatusTitle">Drop Gerber ZIP Archive Here</h3>
+        <p id="gerberStatusSub">Supports KiCad, Altium, Eagle, EasyEDA Gerber RS-274X & Excellon Drills (.zip)</p>
+        <div class="dropzone-actions">
+          <button class="btn btn-primary" onclick="document.getElementById('gerberFileInput').click()">
+            📁 Browse Gerber ZIP
+          </button>
+          <button class="btn btn-sample" id="loadSampleGerberBtn" onclick="loadSampleGerber()">
+            ⚡ Load Sample Gerber (AX60 4-Layer)
+          </button>
+        </div>
+      </div>
+
+      <!-- Loaded File Badge -->
+      <div id="gerberActiveFileBanner" style="display: none; margin-bottom: 1.25rem; font-size: 0.85rem; color: var(--accent-cyan);">
+        Active Archive: <strong id="activeGerberFilename">None</strong>
+      </div>
+
+      <!-- Metrics Grid (4 Top Cards) -->
+      <div class="dashboard-grid">
+        <!-- Layer Stackup -->
+        <div class="metric-card glass">
+          <div class="metric-header">
+            <span class="metric-title">PCB Copper Layers</span>
+            <div class="metric-icon">🥞</div>
+          </div>
+          <div class="metric-value" id="dispLayerCount">-- Layers</div>
+          <div class="metric-sub" id="dispLayerDesc">Upload gerber to inspect stackup</div>
+        </div>
+
+        <!-- Pad Count Summary -->
+        <div class="metric-card glass">
+          <div class="metric-header">
+            <span class="metric-title">Total Pad Count</span>
+            <div class="metric-icon">⚡</div>
+          </div>
+          <div class="metric-value" id="dispTotalPads">-- Pads</div>
+          <div class="metric-sub" id="dispPadBreakdown">SMD: -- | THT Pins: --</div>
+        </div>
+
+        <!-- Board Dimensions -->
+        <div class="metric-card glass">
+          <div class="metric-header">
+            <span class="metric-title">Board Dimensions & Size</span>
+            <div class="metric-icon">📐</div>
+          </div>
+          <div class="metric-value" id="dispDimensions">-- × -- mm</div>
+          <div class="metric-sub" id="dispArea">Area: -- cm² (-- sq in)</div>
+        </div>
+
+        <!-- Pad Density & SMT Sides -->
+        <div class="metric-card glass">
+          <div class="metric-header">
+            <span class="metric-title">Assembly Density</span>
+            <div class="metric-icon">🔍</div>
+          </div>
+          <div class="metric-value" id="dispDensity">-- pads/cm²</div>
+          <div class="metric-sub" id="dispSmtSides">Single-Sided SMT</div>
+        </div>
+      </div>
+
+      <!-- AI Assembly Complexity Analysis Card -->
+      <div class="complexity-panel glass">
+        <div class="gauge-box">
+          <div class="radial-gauge">
+            <svg viewBox="0 0 160 160">
+              <circle class="gauge-bg" cx="80" cy="80" r="70"></circle>
+              <circle class="gauge-fill" id="gaugeCircle" cx="80" cy="80" r="70"></circle>
+            </svg>
+            <div class="gauge-center-text">
+              <div class="gauge-score" id="dispComplexityScore">0%</div>
+              <div class="gauge-label">ASSEMBLY COMPLEXITY</div>
+            </div>
+          </div>
+          <div class="complexity-level-badge" id="dispComplexityBadge" style="background: rgba(0, 230, 118, 0.15); color: var(--accent-emerald);">
+            Standard Assembly
+          </div>
+        </div>
+
+        <div class="complexity-details">
+          <div>
+            <div class="section-subtitle">
+              <span>🤖 AI Package Signature Analysis</span>
+            </div>
+            <div class="chips-container" id="dispPackagesChips">
+              <span class="package-chip">Awaiting Gerber Analysis...</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="section-subtitle">
+              <span>📊 Complexity Multiplier Factors</span>
+            </div>
+            <ul class="factors-list" id="dispFactorsList">
+              <li>Upload Gerber archive to view AI complexity breakdown</li>
+            </ul>
+          </div>
+
+          <div class="recommendations-box">
+            <div class="section-subtitle" style="color: var(--accent-cyan); margin-bottom: 0.35rem;">
+              <span>💡 Manufacturing & Assembly Recommendations:</span>
+            </div>
+            <ul id="dispManufacturingNotes">
+              <li>Laser-cut stainless steel stencil thickness and aperture recommendations will display here.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive 2D Gerber Canvas Section -->
+      <div class="canvas-section glass">
+        <div class="canvas-header">
+          <div class="section-subtitle">
+            <span>🗺️ Engineering PCB Vector & Pad Visualizer</span>
+            <span class="badge" id="canvasStatusBadge" style="margin-left: 0.5rem; font-size: 0.72rem; background: rgba(0, 229, 255, 0.15); color: var(--accent-cyan); border: 1px solid rgba(0, 229, 255, 0.3);">RS-274X Vector CAD Engine</span>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div class="canvas-controls">
+            <button class="canvas-tool-btn" onclick="zoomCanvas(1.25)" title="Zoom In (+)">🔍+</button>
+            <button class="canvas-tool-btn" onclick="zoomCanvas(0.8)" title="Zoom Out (-)">🔍-</button>
+            <button class="canvas-tool-btn" onclick="fitCanvasToBoard()" title="Fit Board to Viewport">⛶ Fit</button>
+            <button class="canvas-tool-btn" onclick="resetCanvasView()" title="Reset Pan & Zoom">⟲ Reset</button>
+          </div>
+        </div>
+
+        <!-- Visualizer Controls Bar: Layers, Themes & Options -->
+        <div class="canvas-toolbar">
+          <!-- Layer Visibility Toggles -->
+          <div class="toolbar-group">
+            <span class="toolbar-label">Layers:</span>
+            <label class="layer-pill active" id="pillOutline" title="Toggle Board Outline (Edge Cuts)">
+              <input type="checkbox" id="chkOutline" checked onchange="toggleLayer('outline', this.checked)">
+              <span class="pill-dot" style="background: #00e5ff;"></span>
+              Outline
+            </label>
+            <label class="layer-pill active" id="pillSilk" title="Toggle Component Silkscreen (F.Silk)">
+              <input type="checkbox" id="chkSilk" checked onchange="toggleLayer('silk', this.checked)">
+              <span class="pill-dot" style="background: #f8fafc;"></span>
+              Silkscreen
+            </label>
+            <label class="layer-pill active" id="pillPads" title="Toggle SMD Pads (F.Paste)">
+              <input type="checkbox" id="chkPads" checked onchange="toggleLayer('pads', this.checked)">
+              <span class="pill-dot" style="background: #ffab00;"></span>
+              Pads
+            </label>
+            <label class="layer-pill active" id="pillCopper" title="Toggle Copper Traces (F.Cu)">
+              <input type="checkbox" id="chkCopper" checked onchange="toggleLayer('copper', this.checked)">
+              <span class="pill-dot" style="background: #e67e22;"></span>
+              Copper
+            </label>
+            <label class="layer-pill active" id="pillDrills" title="Toggle Drill Holes (PTH/NPTH)">
+              <input type="checkbox" id="chkDrills" checked onchange="toggleLayer('drills', this.checked)">
+              <span class="pill-dot" style="background: #cbd5e1;"></span>
+              Drills
+            </label>
+          </div>
+
+          <!-- Soldermask Theme -->
+          <div class="toolbar-group">
+            <span class="toolbar-label">Soldermask:</span>
+            <select id="soldermaskSelect" class="canvas-select" onchange="setSoldermaskColor(this.value)">
+              <option value="green">🟢 Classic Green</option>
+              <option value="black">⚫ Matte Black</option>
+              <option value="blue">🔵 Royal Blue</option>
+              <option value="red">🔴 Signal Red</option>
+              <option value="purple">🟣 OSH Purple</option>
+              <option value="white">⚪ Arctic White</option>
+            </select>
+          </div>
+
+          <!-- Pad Finish -->
+          <div class="toolbar-group">
+            <span class="toolbar-label">Finish:</span>
+            <select id="padFinishSelect" class="canvas-select" onchange="setPadFinish(this.value)">
+              <option value="enig">🥇 ENIG Gold</option>
+              <option value="hasl">🥈 HASL Silver</option>
+            </select>
+          </div>
+
+          <!-- Board Side -->
+          <div class="toolbar-group">
+            <span class="toolbar-label">Side:</span>
+            <div class="btn-group-pill">
+              <button class="pill-toggle active" id="btnSideTop" onclick="setBoardSide('top')">Top</button>
+              <button class="pill-toggle" id="btnSideBot" onclick="setBoardSide('bot')">Bot</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Canvas Container with Interactive HUD and Tooltip -->
+        <div class="canvas-container" id="canvasWrapper">
+          <canvas id="pcbCanvas" width="1200" height="520"></canvas>
+          
+          <!-- Floating CAD HUD Info -->
+          <div class="canvas-hud-top-left">
+            <div class="hud-badge" id="hudBoardSize">📐 -- × -- mm</div>
+            <div class="hud-badge" id="hudSideBadge">Top Layer (F.Cu / F.Paste)</div>
+          </div>
+
+          <div class="canvas-hud-bottom-left">
+            <div class="hud-coords" id="hudCoords">X: 0.00 mm | Y: 0.00 mm</div>
+          </div>
+
+          <!-- Hover Tooltip -->
+          <div id="canvasTooltip" class="canvas-tooltip" style="display: none;">
+            <div class="tooltip-title" id="ttTitle">SMD Pad</div>
+            <div class="tooltip-body" id="ttBody">0.95 × 0.90 mm (RoundRect)</div>
+            <div class="tooltip-coords" id="ttCoords">X: 120.4 mm, Y: 45.2 mm</div>
+          </div>
+        </div>
+
+        <div class="canvas-legend">
+          <div class="legend-item">
+            <div class="legend-color" style="background: #00e5ff;"></div>
+            <span>Outline (True Contour)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #f8fafc; border: 1px solid #475569;"></div>
+            <span>Silkscreen (True Vectors)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #ffab00;"></div>
+            <span>SMD Pads (Exact Shapes)</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #e67e22;"></div>
+            <span>Copper Traces</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #cbd5e1; border: 1px solid #475569;"></div>
+            <span>Drill Holes (Annular Rings)</span>
+          </div>
+          <div class="legend-item" style="margin-left: auto;">
+            <span id="canvasStatsText">Canvas ready</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Assembly Cost Calculator Panel -->
+      <div class="cost-calculator-panel glass">
+        <!-- Interactive Inputs -->
+        <div class="calc-inputs">
+          <!-- Pad Count Calculation Source Selector -->
+          <div class="input-group" style="background: rgba(0, 229, 255, 0.04); padding: 0.85rem 1rem; border-radius: var(--radius-md); border: 1px solid rgba(0, 229, 255, 0.2);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+              <label style="margin-bottom: 0; font-weight: 600; color: var(--accent-cyan); font-size: 0.82rem;">📊 Pad Count Calculation Source:</label>
+              <span id="activePadSourceBadge" class="badge-source">📐 Gerber RS-274X</span>
+            </div>
+            <div class="pad-source-pills">
+              <button type="button" class="pad-source-btn active" id="btnSourceGerber" onclick="setPadSource('gerber')">
+                📐 Gerber File (<span id="sourceGerberPadsBadge">1,495</span> Pads)
+              </button>
+              <button type="button" class="pad-source-btn" id="btnSourceBom" onclick="setPadSource('bom')">
+                📋 BOM Analysis (<span id="sourceBomPadsBadge">886</span> Pads)
+              </button>
+              <button type="button" class="pad-source-btn" id="btnSourceManual" onclick="setPadSource('manual')">
+                ✏️ Custom Manual
+              </button>
+            </div>
+            <div id="sourceExplanationText" style="font-size: 0.74rem; color: var(--text-secondary); margin-top: 0.45rem;">
+              Source: RS-274X Gerber Solder Paste (1,317 SMD pads) + Drill Hits (178 THT pins).
+            </div>
+
+            <!-- Manual Pad Override Inputs (Shown when source is manual) -->
+            <div id="manualPadsRow" style="display: none; margin-top: 0.75rem; gap: 0.75rem; display: none;">
+              <div style="flex: 1;">
+                <label style="font-size: 0.72rem; color: var(--text-muted);">SMD Pads:</label>
+                <input type="number" id="customSmdPadsInput" class="form-control" style="padding: 0.35rem 0.6rem; font-size: 0.85rem;" value="1317" oninput="onCustomPadsChange()">
+              </div>
+              <div style="flex: 1;">
+                <label style="font-size: 0.72rem; color: var(--text-muted);">THT Pins:</label>
+                <input type="number" id="customThtPinsInput" class="form-control" style="padding: 0.35rem 0.6rem; font-size: 0.85rem;" value="178" oninput="onCustomPadsChange()">
+              </div>
+            </div>
+          </div>
+
+          <!-- Quantity of Boards -->
+          <div class="input-group">
+            <label for="numBoardsInput">Number of Boards (Quantity):</label>
+            <div class="input-row">
+              <input type="number" id="numBoardsInput" class="form-control" value="10" min="1" max="100000" oninput="recalcAssemblyCost()">
+              <div class="preset-pills">
+                <button class="pill-btn" onclick="setBoardQty(5)">5</button>
+                <button class="pill-btn active" onclick="setBoardQty(10)">10</button>
+                <button class="pill-btn" onclick="setBoardQty(50)">50</button>
+                <button class="pill-btn" onclick="setBoardQty(100)">100</button>
+                <button class="pill-btn" onclick="setBoardQty(500)">500</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cost Per Pad -->
+          <div class="input-group">
+            <label for="costPerPadInput">
+              Cost Per Pad (<span class="currency-symbol-label">₹</span>):
+            </label>
+            <div class="input-row">
+              <input type="number" id="costPerPadInput" class="form-control" value="0.35" step="0.01" min="0.01" oninput="recalcAssemblyCost()">
+              <span style="font-size: 0.75rem; color: var(--text-muted);">Standard rate: ₹0.30 - ₹0.50</span>
+            </div>
+          </div>
+
+          <!-- Prototype vs Production Toggle -->
+          <div class="input-group">
+            <label>Order Type:</label>
+            <div class="toggle-group">
+              <button class="toggle-btn active" id="btnTypePrototype" onclick="setAssemblyType('prototype')">
+                🛠️ Prototype Mode
+              </button>
+              <button class="toggle-btn" id="btnTypeProduction" onclick="setAssemblyType('production')">
+                🏭 Production Batch
+              </button>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem;" id="typeExplanationText">
+              Prototype: Individual setup & inspection. Standard pad rates.
+            </div>
+          </div>
+
+          <!-- Stencil Mode -->
+          <div class="input-group">
+            <label>Stencil Setup:</label>
+            <select id="stencilSelect" class="form-control" onchange="recalcAssemblyCost()">
+              <option value="single">Single-Sided Laser Stencil (Top)</option>
+              <option value="double">Double-Sided Laser Stencil (Top + Bottom)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Real-Time Cost Results -->
+        <div class="calc-results">
+          <div class="total-callout">
+            <div>
+              <div class="total-label">Total Assembly Cost</div>
+              <div class="total-amount" id="dispTotalAssemblyCost">₹0.00</div>
+            </div>
+            <div style="text-align: right;">
+              <div class="total-label">Cost Per Board</div>
+              <div class="unit-amount" id="dispUnitAssemblyCost">₹0.00 / board</div>
+            </div>
+          </div>
+
+          <table class="breakdown-table">
+            <tbody>
+              <tr>
+                <td>SMT Placement (<span id="calcSmdPadsCount">0</span> pads × <span id="calcBoardsQty">10</span> boards)</td>
+                <td id="calcSmdCost">₹0.00</td>
+              </tr>
+              <tr>
+                <td>Through-Hole Soldering (<span id="calcThtCount">0</span> pins)</td>
+                <td id="calcThtCost">₹0.00</td>
+              </tr>
+              <tr>
+                <td>Laser-Cut SMT Stencil</td>
+                <td id="calcStencilCost">₹800.00</td>
+              </tr>
+              <tr>
+                <td>Machine Calibration & Feeder Setup</td>
+                <td id="calcSetupCost">₹1,200.00</td>
+              </tr>
+              <tr>
+                <td>AI Complexity Adjustment (<span id="calcCompScore">0%</span>)</td>
+                <td id="calcCompSurcharge" style="color: var(--accent-amber);">+₹0.00</td>
+              </tr>
+              <tr id="volumeDiscountRow" style="display: none;">
+                <td style="color: var(--accent-emerald);">Production Volume Discount</td>
+                <td id="calcVolumeDiscount" style="color: var(--accent-emerald);">-0%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ==================== TAB 2: BOM SOURCING & PRICE MATCHER ==================== -->
+    <section id="tabBom" class="tab-content" role="tabpanel">
+
+      <!-- Upload BOM Drag & Drop -->
+      <div class="dropzone glass" id="bomDropzone">
+        <input type="file" id="bomFileInput" accept=".csv,.xlsx,.xls,.tsv" style="display:none;">
+        <div class="dropzone-icon" style="background: rgba(0, 230, 118, 0.1); color: var(--accent-emerald);">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+            <polyline points="10 9 9 9 8 9"></polyline>
+          </svg>
+        </div>
+        <h3 id="bomStatusTitle">Upload Bill of Materials (BOM)</h3>
+        <p id="bomStatusSub">Supports KiCad, Altium, Eagle, or Custom Excel / CSV BOM files (.csv, .xlsx, .xls)</p>
+        <div class="dropzone-actions">
+          <button class="btn btn-primary" onclick="document.getElementById('bomFileInput').click()">
+            📁 Browse BOM File
+          </button>
+          <button class="btn btn-sample" id="loadSampleBomBtn" onclick="loadSampleBom()">
+            ⚡ Load Sample BOM (AX60 Audiometer)
+          </button>
+        </div>
+      </div>
+
+      <!-- BOM Component Pad Analysis & Manual Feed Card -->
+      <div class="bom-pad-analyzer-card glass" id="bomPadAnalyzerCard">
+        <div class="bom-pad-header">
+          <div>
+            <div class="badge-ai" style="margin-bottom: 0.35rem;">AI COMPONENT PAD RECOGNITION ENGINE</div>
+            <h3 style="font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+              <span>⚡ Component Pad Analysis & SMT/THT Breakdown</span>
+            </h3>
+            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem;">
+              Calculates solder pads directly from component quantities, footprints, and MPN pinouts when Gerber is not provided.
+            </p>
+          </div>
+          <div class="bom-pad-actions">
+            <button class="btn btn-warning" id="btnOpenManualFeed" onclick="openManualFeedModal()">
+              📝 Manual Feed & Review Pads (<span id="reviewCountBadge">0</span>)
+            </button>
+            <button class="btn btn-primary" id="btnApplyBomPadsToAssembly" onclick="applyBomPadsToAssembly()">
+              🚀 Apply Pads to Assembly Cost
+            </button>
+          </div>
+        </div>
+
+        <!-- 4 Metric Cards for BOM Pads -->
+        <div class="dashboard-grid" style="margin-top: 1rem; margin-bottom: 0.5rem;">
+          <div class="metric-card glass" style="background: rgba(0, 229, 255, 0.05); border-color: rgba(0, 229, 255, 0.25);">
+            <div class="metric-header">
+              <span class="metric-title">Total Component Pads</span>
+              <div class="metric-icon">⚡</div>
+            </div>
+            <div class="metric-value" id="dispBomPadTotal" style="color: var(--accent-cyan);">-- Pads</div>
+            <div class="metric-sub" id="dispBomPadTotalSub">Across -- components</div>
+          </div>
+
+          <div class="metric-card glass">
+            <div class="metric-header">
+              <span class="metric-title">SMD Solder Pads</span>
+              <div class="metric-icon">🤖</div>
+            </div>
+            <div class="metric-value" id="dispBomPadSmd" style="color: var(--accent-amber);">-- SMD</div>
+            <div class="metric-sub">Automated Pick & Place</div>
+          </div>
+
+          <div class="metric-card glass">
+            <div class="metric-header">
+              <span class="metric-title">Through-Hole (THT) Pins</span>
+              <div class="metric-icon">🔌</div>
+            </div>
+            <div class="metric-value" id="dispBomPadTht" style="color: var(--accent-purple);">-- THT</div>
+            <div class="metric-sub">Hand / Wave Soldering</div>
+          </div>
+
+          <div class="metric-card glass">
+            <div class="metric-header">
+              <span class="metric-title">Package Recognition Status</span>
+              <div class="metric-icon">🎯</div>
+            </div>
+            <div class="metric-value" id="dispBomPadStatus" style="color: var(--accent-emerald);">--%</div>
+            <div class="metric-sub" id="dispBomPadStatusSub">All packages verified</div>
+          </div>
+        </div>
+
+        <!-- Unresolved Alert Banner (shown only if unresolved > 0) -->
+        <div class="unresolved-alert" id="unresolvedAlertBanner" style="display: none;">
+          <div class="alert-icon">⚠️</div>
+          <div class="alert-content">
+            <strong><span id="unresolvedAlertCount">0</span> Component(s) Require Manual Pad Feed:</strong>
+            <span>Some footprints are ambiguous or missing standard pin definitions. You can manually enter their pad counts or verify via manufacturer datasheets.</span>
+          </div>
+          <button class="btn btn-sm btn-warning" onclick="openManualFeedModal('unresolved')">Review Now ↗</button>
+        </div>
+      </div>
+
+      <!-- Sourcing Configuration Bar -->
+      <div class="sourcing-config-bar glass">
+        <div class="section-subtitle">
+          <span>🌐 Preferred Supplier Websites & Search Keywords</span>
+        </div>
+        <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+          Select preferred distributors or enter custom keywords (e.g. robu, sunrom). CIRCUIT IQ automatically searches across all selected sources, finds the lowest cost part, and links the exact website SKU!
+        </p>
+
+        <!-- Clickable Preset Chips -->
+        <div class="supplier-chips">
+          <div class="supplier-chip selected" data-vendor="lcsc" onclick="toggleSupplierChip(this, event)">
+            <input type="checkbox" checked value="lcsc" onclick="event.stopPropagation(); syncSupplierChips();"> LCSC Electronics (lcsc.com)
+          </div>
+          <div class="supplier-chip selected" data-vendor="sunrom" onclick="toggleSupplierChip(this, event)">
+            <input type="checkbox" checked value="sunrom" onclick="event.stopPropagation(); syncSupplierChips();"> Sunrom Electronics (sunrom.com)
+          </div>
+          <div class="supplier-chip selected" data-vendor="electronicscomp" onclick="toggleSupplierChip(this, event)">
+            <input type="checkbox" checked value="electronicscomp" onclick="event.stopPropagation(); syncSupplierChips();"> ElectronicsComp (electronicscomp.com)
+          </div>
+          <div class="supplier-chip selected" data-vendor="robu" onclick="toggleSupplierChip(this, event)">
+            <input type="checkbox" checked value="robu" onclick="event.stopPropagation(); syncSupplierChips();"> Robu.in (robu.in)
+          </div>
+          <div class="supplier-chip" data-vendor="mouser" onclick="toggleSupplierChip(this, event)">
+            <input type="checkbox" value="mouser" onclick="event.stopPropagation(); syncSupplierChips();"> Mouser Electronics
+          </div>
+          <div class="supplier-chip" data-vendor="digikey" onclick="toggleSupplierChip(this, event)">
+            <input type="checkbox" value="digikey" onclick="event.stopPropagation(); syncSupplierChips();"> DigiKey
+          </div>
+        </div>
+
+        <!-- Custom Keyword Input & Sourcing Action Row -->
+        <div class="source-actions-row">
+          <div style="flex: 1; min-width: 280px;">
+            <input type="text" id="supplierKeywordsInput" class="form-control" value="lcsc, sunrom, electronicscomp, robu" placeholder="e.g. lcsc, sunrom, electronicscomp, robu" oninput="syncChipsFromInput()">
+          </div>
+          <div style="display: flex; gap: 0.75rem;">
+            <button class="btn btn-primary" id="startSourcingBtn" onclick="startSourcingBOM()" style="font-size: 0.9rem; padding: 0.65rem 1.4rem;">
+              ⚡ SOURCING ALL PARTS (FIND LOWEST PRICES)
+            </button>
+            <button class="btn btn-secondary" id="exportBomBtn" onclick="exportEnrichedBOM()" disabled>
+              📥 Download Enriched Excel (.xlsx)
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Progress Status -->
+        <div id="sourcingProgressArea" style="display: none; margin-top: 1rem;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.78rem; margin-bottom: 0.35rem;">
+            <span id="sourcingStatusText">Querying suppliers...</span>
+            <span id="sourcingPercentText">0%</span>
+          </div>
+          <div style="height: 6px; background: var(--bg-input); border-radius: 3px; overflow: hidden;">
+            <div id="sourcingProgressBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-cyan), var(--accent-emerald)); transition: width 0.3s ease;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BOM Summary Cards -->
+      <div class="dashboard-grid">
+        <div class="metric-card glass">
+          <div class="metric-header">
+            <span class="metric-title">Unique Line Items</span>
+            <div class="metric-icon">📑</div>
+          </div>
+          <div class="metric-value" id="dispBomLineCount">0 Lines</div>
+          <div class="metric-sub" id="dispBomTotalComponents">0 total components</div>
+        </div>
+
+        <div class="metric-card glass">
+          <div class="metric-header">
+            <span class="metric-title">BOM Unit Cost (1 Board)</span>
+            <div class="metric-icon">💎</div>
+          </div>
+          <div class="metric-value" id="dispBomUnitCost" style="color: var(--accent-emerald);">₹0.00</div>
+          <div class="metric-sub">Sum of lowest matched parts</div>
+        </div>
+
+        <div class="metric-card glass">
+          <div class="metric-header">
+            <span class="metric-title">Total Batch BOM Cost</span>
+            <div class="metric-icon">📦</div>
+          </div>
+          <div class="metric-value" id="dispBomBatchCost">₹0.00</div>
+          <div class="metric-sub" id="dispBomBatchSub">For 10 boards</div>
+        </div>
+
+        <div class="metric-card glass">
+          <div class="metric-header">
+            <span class="metric-title">Lowest Cost Supplier Mix</span>
+            <div class="metric-icon">🏆</div>
+          </div>
+          <div class="metric-value" id="dispSupplierMix" style="font-size: 1.15rem; line-height: 1.4;">--</div>
+          <div class="metric-sub">Auto-selected for lowest price</div>
+        </div>
+      </div>
+
+      <!-- Search & Filter Controls -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; gap: 1rem; flex-wrap: wrap;">
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex: 1; max-width: 400px;">
+          <input type="text" id="bomSearchInput" class="form-control" placeholder="🔍 Search RefDes, description, package, SKU..." oninput="filterBomTable()">
+        </div>
+        <div style="display: flex; gap: 0.75rem; align-items: center;">
+          <button class="btn btn-sm btn-secondary" onclick="openManualFeedModal()" title="View and edit pad counts for all components">
+            📝 Review / Feed Pads
+          </button>
+          <div style="font-size: 0.8rem; color: var(--text-muted);" id="tableRowCountText">
+            Showing 0 items
+          </div>
+        </div>
+      </div>
+
+      <!-- Enriched BOM Interactive Table -->
+      <div class="table-responsive glass">
+        <table class="bom-table" id="bomDataTable">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Designator</th>
+              <th>Description / Value</th>
+              <th>Package</th>
+              <th>Qty</th>
+              <th>Pads/Unit</th>
+              <th>Type</th>
+              <th>Line Pads</th>
+              <th>Datasheet</th>
+              <th>Lowest Price Supplier</th>
+              <th>Website Part # (SKU)</th>
+              <th>Unit Price</th>
+              <th>Line Total</th>
+              <th>Part Link</th>
+              <th>Alternatives</th>
+            </tr>
+          </thead>
+          <tbody id="bomTableBody">
+            <tr>
+              <td colspan="15" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                Upload a BOM or click "Load Sample BOM" to view components and match lowest prices.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+    </section>
+
+    <!-- ==================== TAB 3: TURNKEY PCBA TOTAL ROLLUP ==================== -->
+    <section id="tabTurnkey" class="tab-content" role="tabpanel">
+
+      <!-- Turnkey Grand Total Hero Card -->
+      <div class="turnkey-hero glass">
+        <span class="badge-ai" style="margin-bottom: 0.75rem; display: inline-block;">TURNKEY EXECUTIVE ESTIMATION</span>
+        <h2>Complete Turnkey PCBA Project Cost</h2>
+        <p style="color: var(--text-secondary); max-width: 600px; margin: 0 auto;">
+          Consolidates Bare PCB Fabrication + SMT/THT Assembly + Sourced BOM Component costs into a unified turnkey quotation.
+        </p>
+
+        <div class="turnkey-grand-total" id="dispTurnkeyGrandTotal">₹0.00</div>
+        <div class="turnkey-unit-price">
+          Turnkey Unit Cost: <strong id="dispTurnkeyUnitCost" style="color: var(--accent-cyan);">₹0.00 / board</strong> (for <span id="dispTurnkeyQty">10</span> boards)
+        </div>
+
+        <!-- Distribution Progress Bar -->
+        <div class="distribution-bar" title="Cost Distribution">
+          <div class="dist-pcb" id="barPcb" style="width: 25%;" title="PCB Fabrication"></div>
+          <div class="dist-assembly" id="barAssembly" style="width: 35%;" title="Assembly"></div>
+          <div class="dist-bom" id="barBom" style="width: 40%;" title="Component BOM"></div>
+        </div>
+        <div style="display: flex; justify-content: center; gap: 1.5rem; font-size: 0.8rem; color: var(--text-secondary);">
+          <span style="display: flex; align-items: center; gap: 0.4rem;">
+            <span style="width: 10px; height: 10px; background: var(--accent-cyan); border-radius: 2px;"></span> Bare PCB: <strong id="dispPcbPct">25%</strong>
+          </span>
+          <span style="display: flex; align-items: center; gap: 0.4rem;">
+            <span style="width: 10px; height: 10px; background: var(--accent-purple); border-radius: 2px;"></span> Assembly: <strong id="dispAssemblyPct">35%</strong>
+          </span>
+          <span style="display: flex; align-items: center; gap: 0.4rem;">
+            <span style="width: 10px; height: 10px; background: var(--accent-emerald); border-radius: 2px;"></span> Components: <strong id="dispBomPct">40%</strong>
+          </span>
+        </div>
+      </div>
+
+      <!-- Turnkey Breakdown 3 Columns -->
+      <div class="dashboard-grid">
+        <!-- 1. Bare PCB Fabrication -->
+        <div class="metric-card glass">
+          <div class="metric-header">
+            <span class="metric-title">1. Bare PCB Fabrication</span>
+            <div class="metric-icon">🟩</div>
+          </div>
+          <div class="metric-value" id="turnkeyPcbCost">₹0.00</div>
+          <div class="metric-sub" id="turnkeyPcbSpecs">Dimensions: -- mm | -- Layers</div>
+          <table class="breakdown-table" style="margin-top: 1rem;">
+            <tr>
+              <td>Per Board PCB Fab</td>
+              <td id="turnkeyPcbUnit">₹0.00</td>
+            </tr>
+            <tr>
+              <td>Tooling & Film Setup</td>
+              <td id="turnkeyPcbSetup">₹0.00</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- 2. Assembly Labor & Setup -->
+        <div class="metric-card glass">
+          <div class="metric-header">
+            <span class="metric-title">2. Assembly & Inspection</span>
+            <div class="metric-icon">🛠️</div>
+          </div>
+          <div class="metric-value" id="turnkeyAssemblyCost">₹0.00</div>
+          <div class="metric-sub" id="turnkeyAssemblySpecs">-- SMD Pads | -- THT Pins</div>
+          <table class="breakdown-table" style="margin-top: 1rem;">
+            <tr>
+              <td>Placement & Soldering</td>
+              <td id="turnkeyPlacementSub">₹0.00</td>
+            </tr>
+            <tr>
+              <td>Laser Stencil & Feeder Setup</td>
+              <td id="turnkeySetupSub">₹0.00</td>
+            </tr>
+            <tr>
+              <td>AI Complexity Surcharge</td>
+              <td id="turnkeyCompSub" style="color: var(--accent-amber);">₹0.00</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- 3. Component BOM Sourcing -->
+        <div class="metric-card glass">
+          <div class="metric-header">
+            <span class="metric-title">3. Component Sourcing</span>
+            <div class="metric-icon">📦</div>
+          </div>
+          <div class="metric-value" id="turnkeyBomCost">₹0.00</div>
+          <div class="metric-sub" id="turnkeyBomSpecs">-- Unique Items | Lowest Matched</div>
+          <table class="breakdown-table" style="margin-top: 1rem;">
+            <tr>
+              <td>Unit BOM (1 board)</td>
+              <td id="turnkeyBomUnit">₹0.00</td>
+            </tr>
+            <tr>
+              <td>Batch BOM Cost</td>
+              <td id="turnkeyBomBatch">₹0.00</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Modal for Alternative Supplier Quotes -->
+  <div class="modal-overlay" id="alternativesModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div>
+          <h3 id="modalPartTitle" style="font-size: 1.1rem; font-weight: 700;">Alternative Offers</h3>
+          <span id="modalPartDesc" style="font-size: 0.8rem; color: var(--text-muted);">Ref: R1 (10K 0603)</span>
+        </div>
+        <button class="modal-close" onclick="closeAlternativesModal()">&times;</button>
+      </div>
+      <p style="font-size: 0.8rem; color: var(--text-secondary);">
+        Select any alternative supplier part below to apply it to your BOM:
+      </p>
+      <div class="offers-list" id="modalOffersList">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for BOM Component Pad Review & Manual Feed -->
+  <div class="modal-overlay" id="manualFeedModal">
+    <div class="modal-box modal-lg">
+      <div class="modal-header">
+        <div>
+          <h3 style="font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+            <span>📝 BOM Component Pad Review & Manual Feed</span>
+            <span class="badge-ai" style="font-size: 0.65rem;">AI + MANUAL VERIFIED</span>
+          </h3>
+          <span style="font-size: 0.8rem; color: var(--text-secondary);">
+            Verify and adjust pad counts per unit, toggle SMD/THT technology, or lookup manufacturer pinouts via direct datasheet search.
+          </span>
+        </div>
+        <button class="modal-close" onclick="closeManualFeedModal()">&times;</button>
+      </div>
+
+      <!-- Filters & Quick Search -->
+      <div class="modal-filters">
+        <button class="modal-filter-pill active" id="filterPillAll" onclick="filterManualFeedTable('all')">
+          All Components (<span id="mfCountAll">0</span>)
+        </button>
+        <button class="modal-filter-pill" id="filterPillUnresolved" onclick="filterManualFeedTable('unresolved')" style="border-color: rgba(255, 171, 0, 0.4);">
+          ⚠️ Needs Verification (<span id="mfCountUnresolved">0</span>)
+        </button>
+        <button class="modal-filter-pill" id="filterPillSmd" onclick="filterManualFeedTable('smd')">
+          🤖 SMD Only (<span id="mfCountSmd">0</span>)
+        </button>
+        <button class="modal-filter-pill" id="filterPillTht" onclick="filterManualFeedTable('tht')">
+          🔌 THT Only (<span id="mfCountTht">0</span>)
+        </button>
+
+        <div style="margin-left: auto; min-width: 240px;">
+          <input type="text" id="manualFeedSearchInput" class="form-control" style="padding: 0.35rem 0.65rem; font-size: 0.78rem;" placeholder="🔍 Filter by RefDes, Footprint, MPN..." oninput="renderManualFeedTable()">
+        </div>
+      </div>
+
+      <!-- Scrollable Review Table -->
+      <div class="manual-table-container">
+        <table class="manual-table">
+          <thead>
+            <tr>
+              <th style="width: 40px;">#</th>
+              <th>Designator</th>
+              <th>Description / MPN</th>
+              <th>Footprint / Case</th>
+              <th style="width: 50px;">Qty</th>
+              <th style="width: 85px; text-align: center;">Pads/Unit</th>
+              <th style="width: 80px; text-align: center;">Type</th>
+              <th style="width: 75px; text-align: right;">Total Pads</th>
+              <th>Package / Resolution</th>
+              <th style="width: 140px; text-align: center;">Datasheet & Pinout</th>
+            </tr>
+          </thead>
+          <tbody id="manualFeedTableBody">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Modal Footer Summary & Actions -->
+      <div class="modal-footer-bar">
+        <div style="font-size: 0.82rem; color: var(--text-secondary); display: flex; gap: 1.25rem;">
+          <span>Total Pads: <strong id="mfTotalPads" style="color: var(--accent-cyan);">0</strong></span>
+          <span>SMD: <strong id="mfTotalSmd" style="color: var(--accent-amber);">0</strong></span>
+          <span>THT: <strong id="mfTotalTht" style="color: var(--accent-purple);">0</strong></span>
+        </div>
+        <div style="display: flex; gap: 0.75rem;">
+          <button class="btn btn-secondary" onclick="resetManualFeedToAuto()" style="font-size: 0.85rem; padding: 0.45rem 0.9rem;">
+            🔄 Reset to Auto-Detected
+          </button>
+          <button class="btn btn-primary" onclick="saveManualFeedChanges()" style="font-size: 0.85rem; padding: 0.45rem 1.2rem;">
+            💾 Save & Apply to PCBA Cost
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for Backend Connection & Engine Configuration -->
+  <div class="modal-overlay" id="backendConfigModal">
+    <div class="modal-box" style="max-width: 560px;">
+      <div class="modal-header">
+        <div>
+          <h3 style="font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+            <span>🌐 Backend Engine & Cloud Connection</span>
+          </h3>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">Configure connection to FastAPI backend or use standalone client engine</span>
+        </div>
+        <button class="modal-close" onclick="closeBackendModal()">&times;</button>
+      </div>
+
+      <div style="margin-top: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; background: var(--bg-input); padding: 0.85rem 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-color); margin-bottom: 1rem;">
+          <span class="status-dot" id="modalStatusDot" style="width: 12px; height: 12px;"></span>
+          <div>
+            <div style="font-size: 0.85rem; font-weight: 600;" id="modalEngineStatusTitle">Checking backend status...</div>
+            <div style="font-size: 0.75rem; color: var(--text-secondary);" id="modalEngineStatusSub">Testing connection to API server</div>
+          </div>
+        </div>
+
+        <div class="input-group">
+          <label style="font-size: 0.8rem; font-weight: 600;">Custom Backend API URL (e.g. Render / Localhost):</label>
+          <input type="text" id="backendUrlInput" class="form-control" placeholder="http://127.0.0.1:8000 or https://your-app.onrender.com" value="">
+          <span style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.3rem;">
+            Leave blank to auto-detect localhost. Enter your Render service URL if using GitHub Pages.
+          </span>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-top: 1.25rem;">
+          <button class="btn btn-secondary" onclick="testBackendConnection()" style="flex: 1;">
+            🔍 Test Connection
+          </button>
+          <button class="btn btn-primary" onclick="saveBackendConfig()" style="flex: 1;">
+            💾 Save & Connect
+          </button>
+        </div>
+
+        <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border-color); font-size: 0.75rem; color: var(--text-secondary);">
+          <strong>💡 Note for Hosted Links (GitHub Pages):</strong>
+          <p style="margin-top: 0.3rem;">
+            GitHub Pages is a static host. CIRCUIT IQ automatically runs its smart client-side BOM parser and pad calculator in offline standalone mode! For live web scraping of supplier stores, connect your free Render backend.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toastNotification">
+    <span id="toastMessage">Action completed!</span>
+  </div>
+
+  <script src="js/sample_gerber_data.js"></script>
+  <script src="js/sample_bom_data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
