@@ -1689,21 +1689,114 @@ function calculateBomPadsClient(items) {
   };
 }
 
-function parseCsvClient(rawText) {
+function findBestHeaderRowClient(rows) {
+  const keywords = [
+    'designator', 'reference', 'refdes', 'ref', 'parts', 'component',
+    'description', 'designation', 'value', 'comment',
+    'footprint', 'package', 'case', 'pattern', 'housing',
+    'quantity', 'qty', 'count', 'total',
+    'mpn', 'mfgpart', 'partnumber', 'mfrpart', 'ordercode', 'sku'
+  ];
+
+  let bestRow = 0;
+  let maxScore = -1;
+  const scanLimit = Math.min(25, rows.length);
+
+  for (let r = 0; r < scanLimit; r++) {
+    const rowText = (rows[r] || []).map(cell => String(cell || '').toLowerCase()).join(' ');
+    let score = 0;
+    keywords.forEach(kw => {
+      if (new RegExp('\\b' + kw, 'i').test(rowText)) score++;
+    });
+    if (score > maxScore) {
+      maxScore = score;
+      bestRow = r;
+    }
+  }
+
+  return maxScore > 0 ? bestRow : 0;
+}
+
+function mapColumnTypesClient(headers) {
+  const mapping = {
+    designator: -1,
+    description: -1,
+    footprint: -1,
+    quantity: -1,
+    mpn: -1
+  };
+
+  const isItemIndex = (norm) => {
+    if (['item', 'itemno', 'itemnum', 'itemnumber', 'slno', 'sno', 'srno', 'lineno', 'line', 'row', 'no', 'num', 'idx', 'index'].includes(norm)) return true;
+    if (norm.startsWith('item') && (norm.includes('no') || norm.includes('num') || norm.includes('id') || norm.includes('count') || norm.includes('idx'))) return true;
+    return false;
+  };
+
+  headers.forEach((h, idx) => {
+    const norm = String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!norm) return;
+
+    if (mapping.designator < 0 && /designator|refdes|reference|ref|parts|component|location/i.test(norm)) {
+      mapping.designator = idx;
+    } else if (mapping.quantity < 0 && /quantity|qty|count|total|pcs|pieces/i.test(norm)) {
+      mapping.quantity = idx;
+    } else if (mapping.footprint < 0 && /footprint|package|case|pattern|housing|encapsulation|size/i.test(norm)) {
+      mapping.footprint = idx;
+    } else if (mapping.mpn < 0 && /mpn|mfgpart|partnumber|mfrpart|supplierandref|ordercode|mfgpn|pn|partno|sku|supplierpart/i.test(norm)) {
+      mapping.mpn = idx;
+    } else if (mapping.description < 0 && !isItemIndex(norm) && /description|designation|value|comment|spec|partname|componentname|itemdescription|itemname|val/i.test(norm)) {
+      mapping.description = idx;
+    }
+  });
+
+  // Second pass for description if still missing
+  if (mapping.description < 0) {
+    headers.forEach((h, idx) => {
+      if (idx === mapping.designator || idx === mapping.quantity || idx === mapping.footprint || idx === mapping.mpn) return;
+      const norm = String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!isItemIndex(norm) && /name|title|summary|device/i.test(norm)) {
+        mapping.description = idx;
+      }
+    });
+  }
+
+  // Fallbacks if not recognized
+  if (mapping.designator < 0) mapping.designator = 1;
+  if (mapping.description < 0) mapping.description = 2;
+  if (mapping.footprint < 0) mapping.footprint = 3;
+  if (mapping.quantity < 0) mapping.quantity = 4;
+
+  return mapping;
+}
+
+function parseDelimitedText(rawText) {
   const lines = rawText.split(/\r?\n/).filter(l => l.trim().length > 0);
-  if (lines.length < 2) return { status: 'error', items: [] };
+  if (lines.length === 0) return [];
 
   const firstLine = lines[0];
-  const delim = firstLine.includes(';') ? ';' : (firstLine.includes('\t') ? '\t' : ',');
+  let delim = ',';
+  if (firstLine.includes(';') && (firstLine.split(';').length >= firstLine.split(',').length || firstLine.split(';').length >= 3)) {
+    delim = ';';
+  } else if (firstLine.includes('\t') && firstLine.split('\t').length >= 3) {
+    delim = '\t';
+  } else if (firstLine.includes('|') && firstLine.split('|').length >= 3) {
+    delim = '|';
+  }
 
-  const parseLine = (l) => {
+  const rows = [];
+  for (let l of lines) {
     const cells = [];
     let cur = '';
     let inQuotes = false;
     for (let i = 0; i < l.length; i++) {
       const c = l[i];
       if (c === '"') {
-        inQuotes = !inQuotes;
+        if (inQuotes && l[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
       } else if (c === delim && !inQuotes) {
         cells.push(cur.trim().replace(/^"|"$/g, ''));
         cur = '';
@@ -1712,43 +1805,106 @@ function parseCsvClient(rawText) {
       }
     }
     cells.push(cur.trim().replace(/^"|"$/g, ''));
-    return cells;
-  };
+    if (cells.some(cell => cell.length > 0)) {
+      rows.push(cells);
+    }
+  }
+  return rows;
+}
 
-  const headers = parseLine(lines[0]).map(h => h.toLowerCase());
-  let desIdx = headers.findIndex(h => /designator|refdes|reference|ref/i.test(h));
-  let descIdx = headers.findIndex(h => /description|designation|value|comment/i.test(h));
-  let fpIdx = headers.findIndex(h => /footprint|package|case/i.test(h));
-  let qtyIdx = headers.findIndex(h => /quantity|qty|count/i.test(h));
-  let mpnIdx = headers.findIndex(h => /mpn|mfgpart|partnumber/i.test(h));
+function generateSearchQueryClient(desc, fp, mpn) {
+  if (mpn && mpn.length > 3 && !/^\d+$/.test(mpn)) {
+    return mpn.replace(/[()[\]]/g, ' ').trim().split(/\s+/)[0];
+  }
+  const cleanDesc = (desc || '').replace(/\(.*?\)/g, '').trim() || desc || '';
+  const cleanFp = fp || '';
 
-  if (desIdx < 0) desIdx = 1;
-  if (descIdx < 0) descIdx = 2;
-  if (fpIdx < 0) fpIdx = 3;
-  if (qtyIdx < 0) qtyIdx = 4;
+  const icMatch = cleanDesc.match(/\b(STM32|ESP32|ATMEGA|RP2040|AP7366|LM\d+|AMS1117)\w*/i);
+  if (icMatch) return icMatch[0];
+
+  const pkgMatch = cleanFp.match(/(?:^|[^a-zA-Z0-9])(0201|0402|0603|0805|1206|1210|2512|SOT-?23(?:-\d)?|SOD-?123[A-Z]?|SOD-?323|LQFP-?\d+|QFN-?\d+|SOIC-?\d+|TSSOP-?\d+)(?:$|[^a-zA-Z0-9])/i);
+  const pkgStr = pkgMatch ? pkgMatch[1].toUpperCase() : '';
+
+  let catStr = '';
+  const dLow = cleanDesc.toLowerCase();
+  if (/(\b\d+(\.\d+)?[kmr]\b|\bohm\b|\bresistor\b)/i.test(dLow)) catStr = 'resistor';
+  else if (/(\b\d+(\.\d+)?[pnu]?f\b|\bcapacitor\b|\bcap\b)/i.test(dLow)) catStr = 'capacitor';
+  else if (/(\b\d+(\.\d+)?[un]?h\b|\binductor\b)/i.test(dLow)) catStr = 'inductor';
+  else if (dLow.includes('led')) catStr = 'LED';
+  else if (dLow.includes('zener') || dLow.includes('diode')) catStr = 'diode';
+
+  const parts = [];
+  if (cleanDesc) parts.push(cleanDesc);
+  if (pkgStr && !cleanDesc.toUpperCase().includes(pkgStr)) parts.push(pkgStr);
+  if (catStr && !cleanDesc.toLowerCase().includes(catStr.toLowerCase())) parts.push(catStr);
+
+  return parts.join(' ').trim() || cleanDesc;
+}
+
+function parseBomClient(data, filename = '') {
+  let rawRows = [];
+
+  const isExcel = /\.(xlsx|xls|xlsm)$/i.test(filename) || (typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer);
+
+  if (isExcel && typeof XLSX !== 'undefined') {
+    try {
+      const workbook = XLSX.read(data, { type: data instanceof ArrayBuffer ? 'array' : 'binary' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+    } catch (e) {
+      console.warn('SheetJS parse failed:', e);
+    }
+  }
+
+  if (!rawRows || rawRows.length === 0) {
+    const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
+    rawRows = parseDelimitedText(text);
+  }
+
+  if (!rawRows || rawRows.length === 0) {
+    return { status: 'error', message: 'No readable rows found in BOM file', items: [] };
+  }
+
+  const headerIdx = findBestHeaderRowClient(rawRows);
+  const rawHeaders = (rawRows[headerIdx] || []).map(h => String(h || '').trim());
+  const mapping = mapColumnTypesClient(rawHeaders);
+
+  const desIdx = mapping.designator;
+  const descIdx = mapping.description;
+  const fpIdx = mapping.footprint;
+  const qtyIdx = mapping.quantity;
+  const mpnIdx = mapping.mpn;
 
   const items = [];
   let totalComponents = 0;
 
-  for (let i = 1; i < lines.length; i++) {
-    const row = parseLine(lines[i]);
+  for (let i = headerIdx + 1; i < rawRows.length; i++) {
+    const row = rawRows[i];
     if (!row || row.length === 0) continue;
 
-    const des = desIdx >= 0 && row[desIdx] ? row[desIdx] : '';
-    const desc = descIdx >= 0 && row[descIdx] ? row[descIdx] : '';
-    const fp = fpIdx >= 0 && row[fpIdx] ? row[fpIdx] : '';
-    const mpn = mpnIdx >= 0 && row[mpnIdx] ? row[mpnIdx] : '';
-
-    let qty = 1;
-    if (qtyIdx >= 0 && row[qtyIdx]) {
-      const qVal = parseInt(row[qtyIdx].replace(/[^\d]/g, ''));
-      if (!isNaN(qVal)) qty = qVal;
-    } else if (des) {
-      const refs = des.split(/[,;\s]+/).filter(Boolean);
-      qty = Math.max(1, refs.length);
-    }
+    const des = desIdx >= 0 && row[desIdx] ? String(row[desIdx]).trim() : '';
+    const desc = descIdx >= 0 && row[descIdx] ? String(row[descIdx]).trim() : '';
+    const fp = fpIdx >= 0 && row[fpIdx] ? String(row[fpIdx]).trim() : '';
+    const mpn = mpnIdx >= 0 && row[mpnIdx] ? String(row[mpnIdx]).trim() : '';
 
     if (!des && !desc) continue;
+
+    const normRow = `${des} ${desc}`.toLowerCase();
+    if (normRow.includes('designator') && (normRow.includes('description') || normRow.includes('refdes'))) continue;
+    if (/^(total components|total parts|line count|summary|grand total):/i.test(normRow)) continue;
+
+    let qty = 1;
+    if (qtyIdx >= 0 && row[qtyIdx] != null && String(row[qtyIdx]).trim() !== '') {
+      const qVal = parseInt(String(row[qtyIdx]).replace(/[^\d]/g, ''), 10);
+      if (!isNaN(qVal) && qVal > 0) qty = qVal;
+    } else if (des) {
+      const refs = des.split(/[,;\s]+/).map(r => r.trim()).filter(r => /^[A-Za-z]/.test(r));
+      if (refs.length > 0) qty = refs.length;
+    }
+
+    const isVirtual = /testpoint|jumper_2_open|fiducial|logo|mounting hole|virtual|n\/a \(virtual\)/i.test(`${desc} ${fp}`);
+    const query = generateSearchQueryClient(desc, fp, mpn);
 
     items.push({
       id: items.length + 1,
@@ -1757,9 +1913,10 @@ function parseCsvClient(rawText) {
       footprint: fp,
       quantity: qty,
       mpn: mpn,
-      search_query: `${desc} ${fp}`.trim(),
-      is_virtual: /testpoint|fiducial|logo/i.test(desc)
+      search_query: query,
+      is_virtual: isVirtual
     });
+
     totalComponents += qty;
   }
 
@@ -1769,6 +1926,10 @@ function parseCsvClient(rawText) {
     total_components: totalComponents,
     items: items
   };
+}
+
+function parseCsvClient(rawText) {
+  return parseBomClient(rawText, 'file.csv');
 }
 
 // ==================== BOM PARSING & SOURCING ====================
@@ -1785,24 +1946,27 @@ async function uploadBomFile(file) {
         body: formData
       });
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data.status === 'success') {
         applyBomData(data);
         showToast('BOM parsed successfully with component pad counts!');
         return;
       }
     } catch (err) {
-      console.warn('Backend parse-bom failed, using client-side CSV parser:', err);
+      console.warn('Backend parse-bom failed, using client-side parser:', err);
     } finally {
       document.getElementById('bomStatusTitle').innerText = 'Upload Bill of Materials (BOM)';
       document.getElementById('bomStatusSub').innerText = 'Supports KiCad, Altium, Eagle, or Custom Excel / CSV BOM files';
     }
   }
 
-  // Client-Side CSV Parser Fallback
+  // Client-Side Multi-Format Parser Fallback (Supports Excel .xlsx, .xls and CSV)
+  const isExcel = /\.(xlsx|xls|xlsm)$/i.test(file.name);
   const reader = new FileReader();
+
   reader.onload = (e) => {
     try {
-      const parsed = parseCsvClient(e.target.result);
+      const bufferOrText = e.target.result;
+      const parsed = parseBomClient(bufferOrText, file.name);
       if (parsed.status === 'success' && parsed.items.length > 0) {
         const padResults = calculateBomPadsClient(parsed.items);
         parsed.pad_analysis = padResults.summary;
@@ -1810,16 +1974,22 @@ async function uploadBomFile(file) {
         parsed.unresolved_items = padResults.unresolved_items;
         parsed.filename = file.name;
         applyBomData(parsed);
-        showToast('BOM parsed via Client Engine with pad counts!');
+        showToast(`BOM parsed via Client Engine (${isExcel ? 'Excel' : 'CSV'}) with pad counts!`);
       } else {
-        alert('Could not parse component rows from this file.');
+        alert('Could not parse component rows from this file: ' + (parsed.message || 'Check column headers.'));
       }
     } catch (parseErr) {
       alert('Error parsing file: ' + parseErr.message);
     }
   };
-  reader.readAsText(file);
+
+  if (isExcel) {
+    reader.readAsArrayBuffer(file);
+  } else {
+    reader.readAsText(file);
+  }
 }
+
 
 async function loadSampleBom() {
   document.getElementById('bomStatusTitle').innerText = 'Loading Sample BOM...';
@@ -2594,6 +2764,75 @@ function closeAlternativesModal() {
   currentAlternativeRowIndex = -1;
 }
 
+function exportEnrichedBomClient(items, projectName, fileName) {
+  if (typeof XLSX === 'undefined') {
+    alert('SheetJS (XLSX) library is not loaded.');
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+  const aoa = [
+    [`Turnkey PCBA - Enriched Bill of Materials (${projectName})`],
+    [`Total Unique Lines: ${items.length}   |   Preferred Suppliers: ${state.bom.preferredKeywords.join(', ').toUpperCase()}   |   Currency: ${state.currency}`],
+    [],
+    [
+      'Item #',
+      'Designator (RefDes)',
+      'Description / Value',
+      'Footprint / Package',
+      'Qty',
+      'Selected Supplier',
+      'Supplier Part # (SKU)',
+      `Unit Price (${state.currency})`,
+      `Line Total (${state.currency})`,
+      'Part Web Link'
+    ]
+  ];
+
+  let grandTotal = 0;
+  items.forEach((it, idx) => {
+    const qty = it.quantity || 1;
+    const unitPrice = it.unit_price != null ? Number(it.unit_price) : 0;
+    const lineTotal = it.line_total != null ? Number(it.line_total) : (unitPrice * qty);
+    grandTotal += lineTotal;
+
+    aoa.push([
+      idx + 1,
+      it.designator || '',
+      it.description || '',
+      it.footprint || '',
+      qty,
+      it.is_virtual ? 'N/A (Virtual)' : (it.vendor || 'Not Sourced'),
+      it.is_virtual ? 'Virtual (No Assembly)' : (it.sku || it.mpn || ''),
+      unitPrice,
+      Math.round(lineTotal * 100) / 100,
+      it.url || ''
+    ]);
+  });
+
+  aoa.push([]);
+  aoa.push([
+    '', '', '', 'Grand Total BOM Cost:', '', '', '', '', Math.round(grandTotal * 100) / 100, ''
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [
+    { wch: 8 },
+    { wch: 25 },
+    { wch: 35 },
+    { wch: 25 },
+    { wch: 8 },
+    { wch: 18 },
+    { wch: 22 },
+    { wch: 16 },
+    { wch: 16 },
+    { wch: 30 }
+  ];
+
+  XLSX.utils.book_append_sheet(wb, ws, "Enriched_BOM");
+  XLSX.writeFile(wb, fileName);
+}
+
 // ==================== EXCEL EXPORT ====================
 async function exportEnrichedBOM() {
   if (!state.bom.sourcedItems || state.bom.sourcedItems.length === 0) {
@@ -2601,44 +2840,56 @@ async function exportEnrichedBOM() {
     return;
   }
 
-  showToast('Generating enriched Excel workbook with hyperlinks...');
+  showToast('Generating enriched Excel workbook...');
+  const projectName = state.gerber.filename.replace(/\.[^/.]+$/, "") || "PCBA_Project";
+  const fileName = `Enriched_BOM_${state.currency}.xlsx`;
 
-  try {
-    const payload = {
-      sourced_data: {
-        currency: state.currency,
-        currency_symbol: state.currencySymbol,
-        total_bom_cost: state.bom.totalBomCost,
-        total_line_items: state.bom.totalLineItems,
-        preferred_websites: state.bom.preferredKeywords,
-        items: state.bom.sourcedItems
-      },
-      project_name: state.gerber.filename.replace(/\.[^/.]+$/, "") || "PCBA_Project"
-    };
+  if (state.backend.isOnline) {
+    try {
+      const payload = {
+        sourced_data: {
+          currency: state.currency,
+          currency_symbol: state.currencySymbol,
+          total_bom_cost: state.bom.totalBomCost,
+          total_line_items: state.bom.totalLineItems,
+          preferred_websites: state.bom.preferredKeywords,
+          items: state.bom.sourcedItems
+        },
+        project_name: projectName
+      };
 
-    const res = await fetch('/api/export-bom', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+      const res = await fetch(getApiUrl('/api/export-bom'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-    if (res.ok) {
-      const blob = await res.blob();
-      const downloadUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `Enriched_BOM_${state.currency}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      showToast('Excel workbook downloaded successfully!');
-    } else {
-      alert('Export failed.');
+      if (res.ok) {
+        const blob = await res.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast('Excel workbook downloaded successfully!');
+        return;
+      }
+    } catch (err) {
+      console.warn('Backend export failed, falling back to client-side SheetJS export:', err);
     }
-  } catch (err) {
-    alert('Export error: ' + err.message);
+  }
+
+  // Client-Side Excel Export Fallback via SheetJS
+  try {
+    exportEnrichedBomClient(state.bom.sourcedItems, projectName, fileName);
+    showToast('Enriched BOM Excel exported via Client Engine!');
+  } catch (clientErr) {
+    alert('Export error: ' + clientErr.message);
   }
 }
+
 
 // ==================== TAB 3: TURNKEY PCBA ROLLUP ====================
 function updateTurnkeySummary() {

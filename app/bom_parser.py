@@ -1,23 +1,30 @@
 """
 BOM Parser Module
 Parses CSV, TSV, and Excel (XLSX, XLS) Bill of Materials files.
-Normalizes columns, calculates quantities, and builds search-optimized queries.
+Includes Smart Header-Offset Detection, Multi-Row Title Scanning,
+Fuzzy Column Mapping, Safe Cell Extraction, and Query Generation.
 """
 
 import os
 import re
 import csv
 import io
+from typing import Optional, List, Dict, Any
 import pandas as pd
+
 
 def normalize_header(header: str) -> str:
     """Normalizes header string for fuzzy column mapping."""
-    clean = re.sub(r'[^a-zA-Z0-9]', '', str(header).lower())
-    return clean
+    return re.sub(r'[^a-zA-Z0-9]', '', str(header).lower())
 
-def map_column_types(headers):
-    """Maps actual BOM column names to standard keys."""
-    mapping = {
+
+def map_column_types(headers: List[str]) -> Dict[str, Optional[str]]:
+    """
+    Maps actual BOM column names to standard keys:
+    designator, description, footprint, quantity, mpn.
+    Distinguishes item counter columns (e.g. 'Item #', 'Sl No') from component descriptions.
+    """
+    mapping: Dict[str, Optional[str]] = {
         'designator': None,
         'description': None,
         'footprint': None,
@@ -25,34 +32,94 @@ def map_column_types(headers):
         'mpn': None
     }
 
-    for col in headers:
-        norm = normalize_header(col)
-        if mapping['designator'] is None and any(k in norm for k in ['designator', 'refdes', 'reference', 'ref', 'parts']):
-            mapping['designator'] = col
-        elif mapping['quantity'] is None and any(k in norm for k in ['quantity', 'qty', 'count', 'total']):
-            mapping['quantity'] = col
-        elif mapping['footprint'] is None and any(k in norm for k in ['footprint', 'package', 'case', 'pattern']):
-            mapping['footprint'] = col
-        elif mapping['mpn'] is None and any(k in norm for k in ['mpn', 'mfgpart', 'partnumber', 'mfrpart', 'supplierandref', 'ordercode']):
-            mapping['mpn'] = col
-        elif mapping['description'] is None and any(k in norm for k in ['description', 'designation', 'value', 'comment', 'item', 'name']):
-            mapping['description'] = col
+    def is_item_index_col(norm_hdr: str) -> bool:
+        if norm_hdr in ['item', 'itemno', 'itemnum', 'itemnumber', 'slno', 'sno', 'srno', 'lineno', 'line', 'row', 'no', 'num', 'idx', 'index']:
+            return True
+        if norm_hdr.startswith('item') and any(s in norm_hdr for s in ['no', 'num', 'id', 'count', 'idx']):
+            return True
+        return False
 
-    # Fallbacks if some headers weren't found
+    cleaned_headers = [str(h).strip() for h in headers if str(h).strip()]
+
+    # First pass: High-priority matches
+    for col in cleaned_headers:
+        norm = normalize_header(col)
+        if not norm:
+            continue
+
+        # Designator / Reference
+        if mapping['designator'] is None and any(k in norm for k in ['designator', 'refdes', 'reference', 'ref', 'parts', 'component', 'location']):
+            mapping['designator'] = col
+            continue
+
+        # Quantity
+        if mapping['quantity'] is None and any(k in norm for k in ['quantity', 'qty', 'count', 'total', 'pcs', 'pieces']):
+            mapping['quantity'] = col
+            continue
+
+        # Footprint / Package
+        if mapping['footprint'] is None and any(k in norm for k in ['footprint', 'package', 'case', 'pattern', 'housing', 'encapsulation', 'size']):
+            mapping['footprint'] = col
+            continue
+
+        # MPN / Part Number / SKU / Order Code
+        if mapping['mpn'] is None and any(k in norm for k in ['mpn', 'mfgpart', 'partnumber', 'mfrpart', 'supplierandref', 'ordercode', 'mfgpn', 'pn', 'partno', 'sku', 'supplierpart']):
+            mapping['mpn'] = col
+            continue
+
+        # Description / Value (excluding item counter columns)
+        if mapping['description'] is None and not is_item_index_col(norm) and any(k in norm for k in ['description', 'designation', 'value', 'comment', 'spec', 'partname', 'componentname', 'itemdescription', 'itemname', 'val']):
+            mapping['description'] = col
+            continue
+
+    # Second pass: Secondary description words if not yet found
     if mapping['description'] is None:
-        for col in headers:
+        for col in cleaned_headers:
+            if col in [mapping['designator'], mapping['quantity'], mapping['footprint'], mapping['mpn']]:
+                continue
             norm = normalize_header(col)
-            if col != mapping['designator'] and col != mapping['quantity'] and col != mapping['footprint']:
+            if not is_item_index_col(norm) and any(k in norm for k in ['name', 'title', 'summary', 'device']):
+                mapping['description'] = col
+                break
+
+    # Third pass fallback: Take the first unassigned non-numeric, non-index column
+    if mapping['description'] is None:
+        for col in cleaned_headers:
+            if col in [mapping['designator'], mapping['quantity'], mapping['footprint'], mapping['mpn']]:
+                continue
+            norm = normalize_header(col)
+            if not is_item_index_col(norm) and norm and not norm.isdigit() and 'unnamed' not in norm:
                 mapping['description'] = col
                 break
 
     return mapping
 
 
+def safe_cell_str(row: Any, col_name: Optional[str]) -> str:
+    """Safely extracts and cleans a string value from a pandas row without Series ambiguity."""
+    if not col_name:
+        return ""
+    try:
+        val = row.get(col_name)
+    except Exception:
+        return ""
+
+    if val is None:
+        return ""
+    if isinstance(val, pd.Series):
+        non_null = val.dropna()
+        val = non_null.iloc[0] if not non_null.empty else ""
+    if pd.isna(val):
+        return ""
+    s = str(val).strip()
+    return "" if s.lower() in ["nan", "none", "null", "undefined"] else s
+
+
 def generate_search_query(description: str, footprint: str, mpn: str = "") -> str:
     """Generates an intelligent, clean search query for electronics distributors."""
     if mpn and len(mpn.strip()) > 3 and not mpn.strip().isdigit():
         clean_mpn = re.sub(r'[\(\)\[\]]', ' ', mpn).strip()
+        # If supplier SKU has prefix like ROBU- or SR-, use the part suffix or full code
         return clean_mpn.split()[0]
 
     desc = str(description).strip() if description else ""
@@ -113,55 +180,155 @@ def generate_search_query(description: str, footprint: str, mpn: str = "") -> st
     return query if query else desc
 
 
-def parse_bom_file(file_content_or_path, filename: str = ""):
+def find_best_header_row(raw_df: pd.DataFrame) -> int:
+    """
+    Scans the first 25 rows of a dataframe to find the row most likely
+    to be the column header row (e.g. containing 'Designator', 'Quantity', etc.).
+    """
+    best_row_idx = 0
+    max_score = -1
+
+    keywords = [
+        'designator', 'reference', 'refdes', 'ref', 'parts', 'component',
+        'description', 'designation', 'value', 'comment',
+        'footprint', 'package', 'case', 'pattern', 'housing',
+        'quantity', 'qty', 'count', 'total',
+        'mpn', 'mfgpart', 'partnumber', 'mfrpart', 'ordercode', 'sku'
+    ]
+
+    scan_limit = min(25, len(raw_df))
+    for r_idx in range(scan_limit):
+        row_vals = raw_df.iloc[r_idx].dropna().astype(str).tolist()
+        row_text = " ".join([v.lower() for v in row_vals])
+
+        score = sum(1 for kw in keywords if re.search(r'\b' + kw, row_text))
+        if score > max_score:
+            max_score = score
+            best_row_idx = r_idx
+
+    if max_score <= 0:
+        return 0
+    return best_row_idx
+
+
+def deduplicate_headers(headers: List[Any]) -> List[str]:
+    """Ensures all column headers are strings and uniquely named."""
+    seen: Dict[str, int] = {}
+    result: List[str] = []
+    for h in headers:
+        base = str(h).strip()
+        if not base or base.lower() == 'nan':
+            base = 'unnamed'
+        if base in seen:
+            seen[base] += 1
+            result.append(f"{base}_{seen[base]}")
+        else:
+            seen[base] = 0
+            result.append(base)
+    return result
+
+
+
+def detect_delimiter(raw_text: str) -> str:
+    """Intelligently detects delimiter (comma, semicolon, tab, pipe) even if commas exist inside quotes."""
+    lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
+    if not lines:
+        return ','
+
+    first_few = "\n".join(lines[:10])
+    try:
+        dialect = csv.Sniffer().sniff(first_few, delimiters=[',', ';', '\t', '|'])
+        if dialect and dialect.delimiter:
+            return dialect.delimiter
+    except Exception:
+        pass
+
+    first_line = lines[0]
+    if first_line.count(';') >= 2 and first_line.count(';') >= first_line.count(','):
+        return ';'
+    if first_line.count('\t') >= 2:
+        return '\t'
+    if first_line.count('|') >= 2:
+        return '|'
+
+    return ','
+
+
+def parse_bom_file(file_content_or_path, filename: str = "") -> Dict[str, Any]:
     """
     Parses BOM from file path or bytes buffer.
-    Returns normalized list of component line items with quantities and clean queries.
+    Supports CSV, TSV, XLSX, and XLS with automated header-row detection.
     """
     ext = os.path.splitext(filename.lower())[1] if filename else ""
+    is_bytes = isinstance(file_content_or_path, bytes)
+
+    # Detect file type via extension or magic bytes
+    is_excel = ext in ['.xlsx', '.xls', '.xlsm']
+    if is_bytes and len(file_content_or_path) > 4:
+        if file_content_or_path.startswith(b'PK\x03\x04'):
+            is_excel = True
+        elif file_content_or_path.startswith(b'\xd0\xcf\x11\xe0'):
+            is_excel = True
 
     df = None
-    if ext in ['.xlsx', '.xls'] or (isinstance(file_content_or_path, bytes) and ext in ['.xlsx', '.xls']):
-        if isinstance(file_content_or_path, str):
-            df = pd.read_excel(file_content_or_path)
-        else:
-            df = pd.read_excel(io.BytesIO(file_content_or_path))
+    if is_excel:
+        try:
+            stream = io.BytesIO(file_content_or_path) if is_bytes else file_content_or_path
+            raw_excel = pd.read_excel(stream, header=None)
+            if not raw_excel.empty:
+                header_idx = find_best_header_row(raw_excel)
+                raw_headers = deduplicate_headers(raw_excel.iloc[header_idx].tolist())
+                data_rows = raw_excel.iloc[header_idx + 1:].copy()
+                data_rows.columns = raw_headers
+                df = data_rows
+        except Exception as excel_err:
+            return {"status": "error", "message": f"Excel parsing failed: {str(excel_err)}", "items": []}
     else:
-        # CSV or text file
+        # CSV or plain text
+        raw_text = ""
         if isinstance(file_content_or_path, str):
-            with open(file_content_or_path, 'r', encoding='utf-8', errors='ignore') as f:
-                raw_text = f.read()
-        elif isinstance(file_content_or_path, bytes):
-            raw_text = file_content_or_path.decode('utf-8', errors='ignore')
+            for enc in ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']:
+                try:
+                    with open(file_content_or_path, 'r', encoding=enc, errors='ignore') as f:
+                        raw_text = f.read()
+                    break
+                except Exception:
+                    continue
+        elif is_bytes:
+            for enc in ['utf-8', 'utf-8-sig', 'latin-1', 'cp1252']:
+                try:
+                    raw_text = file_content_or_path.decode(enc)
+                    break
+                except Exception:
+                    continue
+            if not raw_text:
+                raw_text = file_content_or_path.decode('utf-8', errors='ignore')
         else:
             raw_text = str(file_content_or_path)
 
-        first_few_lines = raw_text.splitlines()[:5]
-        sample = "\n".join(first_few_lines)
-        delimiter = ','
-        if sample.count(';') > sample.count(','):
-            delimiter = ';'
-        elif sample.count('\t') > sample.count(','):
-            delimiter = '\t'
+        delimiter = detect_delimiter(raw_text)
 
-        # Use csv.reader for robust handling of trailing delimiters
-        reader = csv.reader(io.StringIO(raw_text), delimiter=delimiter)
-        raw_rows = [row for row in reader if any(cell.strip() for cell in row)]
-        if not raw_rows:
-            return {"status": "error", "message": "Empty BOM file", "items": []}
+        try:
+            reader = csv.reader(io.StringIO(raw_text), delimiter=delimiter)
+            raw_rows = [row for row in reader if any(cell.strip() for cell in row)]
+            if not raw_rows:
+                return {"status": "error", "message": "Empty BOM file", "items": []}
 
-        raw_header = [h.strip() for h in raw_rows[0]]
-        # Pad data rows or trim to max header length
-        header_len = len(raw_header)
-        data = []
-        for r in raw_rows[1:]:
-            padded = r + [''] * max(0, header_len - len(r))
-            data.append(padded[:header_len])
-        df = pd.DataFrame(data, columns=raw_header)
+            raw_df = pd.DataFrame(raw_rows)
+            header_idx = find_best_header_row(raw_df)
+            raw_headers = deduplicate_headers(raw_df.iloc[header_idx].tolist())
+            data_rows = raw_df.iloc[header_idx + 1:].copy()
+            data_rows.columns = raw_headers
+            df = data_rows
+        except Exception as csv_err:
+            return {"status": "error", "message": f"CSV parsing failed: {str(csv_err)}", "items": []}
 
-    # Clean headers
+    if df is None or df.empty:
+        return {"status": "error", "message": "No data rows found in BOM.", "items": []}
+
+    # Clean and map headers
     df.columns = [str(c).strip() for c in df.columns]
-    mapping = map_column_types(df.columns)
+    mapping = map_column_types(list(df.columns))
 
     des_col = mapping['designator']
     desc_col = mapping['description']
@@ -174,30 +341,43 @@ def parse_bom_file(file_content_or_path, filename: str = ""):
     total_components = 0
 
     for idx, row in df.iterrows():
-        designator = str(row[des_col]).strip() if des_col and pd.notna(row.get(des_col)) else ""
-        description = str(row[desc_col]).strip() if desc_col and pd.notna(row.get(desc_col)) else ""
-        footprint = str(row[fp_col]).strip() if fp_col and pd.notna(row.get(fp_col)) else ""
-        mpn = str(row[mpn_col]).strip() if mpn_col and pd.notna(row.get(mpn_col)) else ""
+        designator = safe_cell_str(row, des_col)
+        description = safe_cell_str(row, desc_col)
+        footprint = safe_cell_str(row, fp_col)
+        mpn = safe_cell_str(row, mpn_col)
+
+        # Skip rows where both designator and description are blank
+        if not designator and not description:
+            continue
+
+        # Skip rows that repeat headers or are summary footers
+        norm_row = f"{designator} {description}".lower()
+        if 'designator' in norm_row and ('description' in norm_row or 'refdes' in norm_row):
+            continue
+        if re.search(r'^(total components|total parts|line count|summary|grand total):', norm_row):
+            continue
 
         # Quantity calculation
         qty = 1
-        if qty_col and pd.notna(row.get(qty_col)):
-            val = str(row[qty_col]).strip()
-            val_clean = re.sub(r'[^\d]', '', val)
-            if val_clean:
-                qty = int(val_clean)
+        raw_qty = safe_cell_str(row, qty_col)
+        if raw_qty:
+            try:
+                qty = max(1, int(float(raw_qty)))
+            except Exception:
+                val_clean = re.sub(r'[^\d]', '', raw_qty)
+                if val_clean:
+                    qty = max(1, int(val_clean))
         elif designator:
             # Count comma/semicolon/space separated references
-            refs = [r.strip() for r in re.split(r'[,;\s]+', designator) if r.strip()]
-            qty = max(1, len(refs))
+            refs = [r.strip() for r in re.split(r'[,;\s]+', designator) if r.strip() and re.match(r'^[A-Za-z]', r)]
+            if refs:
+                qty = max(1, len(refs))
 
-        # Skip headers or empty rows
-        if not designator and not description:
-            continue
-        if description.lower() in ['testpoint', 'jumper_2_open', 'fiducial', 'logo']:
+        # Check for virtual components (testpoints, fiducials, jumpers, mounting holes)
+        is_virtual = False
+        norm_check = f"{description} {footprint}".lower()
+        if any(v in norm_check for v in ['testpoint', 'jumper_2_open', 'fiducial', 'logo', 'mounting hole', 'virtual', 'n/a (virtual)']):
             is_virtual = True
-        else:
-            is_virtual = False
 
         query = generate_search_query(description, footprint, mpn)
 
