@@ -259,16 +259,24 @@ def parse_bom_file(file_content_or_path, filename: str = "") -> Dict[str, Any]:
     Parses BOM from file path or bytes buffer.
     Supports CSV, TSV, XLSX, and XLS with automated header-row detection.
     """
+    if isinstance(file_content_or_path, str) and not filename:
+        filename = os.path.basename(file_content_or_path)
     ext = os.path.splitext(filename.lower())[1] if filename else ""
     is_bytes = isinstance(file_content_or_path, bytes)
 
-    # Detect file type via extension or magic bytes
+    # Detect file type via extension or magic bytes (PK\x03\x04 for .xlsx, \xd0\xcf\x11\xe0 for .xls)
     is_excel = ext in ['.xlsx', '.xls', '.xlsm']
-    if is_bytes and len(file_content_or_path) > 4:
-        if file_content_or_path.startswith(b'PK\x03\x04'):
+    if is_bytes and len(file_content_or_path) >= 4:
+        if file_content_or_path.startswith(b'PK\x03\x04') or file_content_or_path.startswith(b'\xd0\xcf\x11\xe0'):
             is_excel = True
-        elif file_content_or_path.startswith(b'\xd0\xcf\x11\xe0'):
-            is_excel = True
+    elif isinstance(file_content_or_path, str) and os.path.exists(file_content_or_path):
+        try:
+            with open(file_content_or_path, 'rb') as f_head:
+                magic = f_head.read(8)
+            if magic.startswith(b'PK\x03\x04') or magic.startswith(b'\xd0\xcf\x11\xe0'):
+                is_excel = True
+        except Exception:
+            pass
 
     df = None
     if is_excel:
@@ -394,9 +402,15 @@ def parse_bom_file(file_content_or_path, filename: str = "") -> Dict[str, Any]:
         item_id += 1
         total_components += qty
 
+    # Enrich items with intelligent pad estimation
+    from app.bom_pad_calculator import calculate_bom_pads
+    pad_calc = calculate_bom_pads(items)
+
     return {
         "status": "success",
         "total_line_items": len(items),
         "total_components": total_components,
-        "items": items
+        "items": pad_calc["items"],
+        "pad_analysis": pad_calc["summary"],
+        "unresolved_items": pad_calc["unresolved_items"]
     }

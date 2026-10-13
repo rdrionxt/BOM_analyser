@@ -13,6 +13,7 @@ from typing import Dict, List, Any, Optional
 # Database of well-known manufacturer part numbers (MPNs) and their exact package/pad counts
 KNOWN_MPN_DATABASE: Dict[str, Dict[str, Any]] = {
     # Microcontrollers & Processors
+    "STM32F446RET6": {"pads": 64, "type": "SMD", "package": "LQFP-64", "leads": 64, "thermal_pad": 0},
     "STM32F446RET": {"pads": 64, "type": "SMD", "package": "LQFP-64", "leads": 64, "thermal_pad": 0},
     "STM32F103C8T": {"pads": 48, "type": "SMD", "package": "LQFP-48", "leads": 48, "thermal_pad": 0},
     "STM32F405RGT": {"pads": 64, "type": "SMD", "package": "LQFP-64", "leads": 64, "thermal_pad": 0},
@@ -20,26 +21,32 @@ KNOWN_MPN_DATABASE: Dict[str, Dict[str, Any]] = {
     "ATMEGA328P-AU": {"pads": 32, "type": "SMD", "package": "TQFP-32", "leads": 32, "thermal_pad": 0},
     "ATMEGA328P-PU": {"pads": 28, "type": "THT", "package": "DIP-28", "leads": 28, "thermal_pad": 0},
     "ESP32-WROOM-32": {"pads": 39, "type": "SMD", "package": "Module-38+EP", "leads": 38, "thermal_pad": 1},
+    "ESP32-WROOM": {"pads": 39, "type": "SMD", "package": "Module-38+EP", "leads": 38, "thermal_pad": 1},
     "ESP8266-12F": {"pads": 16, "type": "SMD", "package": "Module-16", "leads": 16, "thermal_pad": 0},
     "RP2040": {"pads": 57, "type": "SMD", "package": "QFN-56+EP", "leads": 56, "thermal_pad": 1},
 
     # Power Management & Regulators
     "AP7366EA": {"pads": 5, "type": "SMD", "package": "SOT-23-5", "leads": 5, "thermal_pad": 0},
     "AP7366": {"pads": 5, "type": "SMD", "package": "SOT-23-5", "leads": 5, "thermal_pad": 0},
+    "LM73100RPWR": {"pads": 10, "type": "SMD", "package": "VQFN-10", "leads": 10, "thermal_pad": 0},
     "LM73100RPW": {"pads": 10, "type": "SMD", "package": "VQFN-10", "leads": 10, "thermal_pad": 0},
     "LM73100": {"pads": 10, "type": "SMD", "package": "VQFN-10", "leads": 10, "thermal_pad": 0},
+    "TPS63700DRCR": {"pads": 11, "type": "SMD", "package": "VSON-10+EP", "leads": 10, "thermal_pad": 1},
     "TPS63700DRC": {"pads": 11, "type": "SMD", "package": "VSON-10+EP", "leads": 10, "thermal_pad": 1},
     "TPS63700": {"pads": 11, "type": "SMD", "package": "VSON-10+EP", "leads": 10, "thermal_pad": 1},
+    "BQ25306RTER": {"pads": 17, "type": "SMD", "package": "WQFN-16+EP", "leads": 16, "thermal_pad": 1},
     "BQ25306RTE": {"pads": 17, "type": "SMD", "package": "WQFN-16+EP", "leads": 16, "thermal_pad": 1},
     "BQ25306": {"pads": 17, "type": "SMD", "package": "WQFN-16+EP", "leads": 16, "thermal_pad": 1},
     "MPQ3425DL": {"pads": 15, "type": "SMD", "package": "QFN-14+EP", "leads": 14, "thermal_pad": 1},
     "MPQ3425": {"pads": 15, "type": "SMD", "package": "QFN-14+EP", "leads": 14, "thermal_pad": 1},
+    "TPS564252DRLR": {"pads": 6, "type": "SMD", "package": "SOT-563", "leads": 6, "thermal_pad": 0},
     "TPS564252DRL": {"pads": 6, "type": "SMD", "package": "SOT-563", "leads": 6, "thermal_pad": 0},
     "TPS564252": {"pads": 6, "type": "SMD", "package": "SOT-563", "leads": 6, "thermal_pad": 0},
     "AMS1117": {"pads": 4, "type": "SMD", "package": "SOT-223", "leads": 3, "thermal_pad": 1},
     "LM1117": {"pads": 4, "type": "SMD", "package": "SOT-223", "leads": 3, "thermal_pad": 1},
     "LM7805": {"pads": 3, "type": "THT", "package": "TO-220", "leads": 3, "thermal_pad": 0},
     "VRB1205YMD-5WR3": {"pads": 6, "type": "THT", "package": "DIP-6 DC-DC", "leads": 6, "thermal_pad": 0},
+    "VRB1205YMD5WR3": {"pads": 6, "type": "THT", "package": "DIP-6 DC-DC", "leads": 6, "thermal_pad": 0},
     "VRB1205": {"pads": 6, "type": "THT", "package": "DIP-6 DC-DC", "leads": 6, "thermal_pad": 0},
 
     # Analog & Interface ICs
@@ -61,6 +68,7 @@ KNOWN_MPN_DATABASE: Dict[str, Dict[str, Any]] = {
     "D3V3XA4B10LP": {"pads": 10, "type": "SMD", "package": "UDFN-10", "leads": 10, "thermal_pad": 0},
 
     # Discrete Transistors & MOSFETs
+    "BC847B": {"pads": 3, "type": "SMD", "package": "SOT-23", "leads": 3, "thermal_pad": 0},
     "BC847": {"pads": 3, "type": "SMD", "package": "SOT-23", "leads": 3, "thermal_pad": 0},
     "BC846": {"pads": 3, "type": "SMD", "package": "SOT-23", "leads": 3, "thermal_pad": 0},
     "BC857": {"pads": 3, "type": "SMD", "package": "SOT-23", "leads": 3, "thermal_pad": 0},
@@ -82,10 +90,13 @@ KNOWN_MPN_DATABASE: Dict[str, Dict[str, Any]] = {
     # Electromechanical & Connectors
     "G6K-2F": {"pads": 8, "type": "SMD", "package": "SMD Relay 8-pin", "leads": 8, "thermal_pad": 0},
     "G6K2FYTRDC5": {"pads": 8, "type": "SMD", "package": "SMD Relay 8-pin", "leads": 8, "thermal_pad": 0},
+    "G6K": {"pads": 8, "type": "SMD", "package": "SMD Relay 8-pin", "leads": 8, "thermal_pad": 0},
     "54-00174": {"pads": 4, "type": "SMD", "package": "Audio Jack 4-pin", "leads": 4, "thermal_pad": 0},
+    "5400174": {"pads": 4, "type": "SMD", "package": "Audio Jack 4-pin", "leads": 4, "thermal_pad": 0},
     "NRJ4HH": {"pads": 4, "type": "THT", "package": "Neutrik 1/4in Jack 4-pin", "leads": 4, "thermal_pad": 0},
     "1048": {"pads": 4, "type": "THT", "package": "Keystone Battery Clip 4-pin", "leads": 4, "thermal_pad": 0},
     "MICROSDCARD": {"pads": 13, "type": "SMD", "package": "MicroSD Socket 9+4", "leads": 9, "thermal_pad": 4},
+    "MICROSD": {"pads": 13, "type": "SMD", "package": "MicroSD Socket 9+4", "leads": 9, "thermal_pad": 4},
 }
 
 def generate_datasheet_url(mpn: str, description: str = "") -> str:
@@ -139,47 +150,96 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
             }
 
     # -------------------------------------------------------------
-    # 2. Resistors, Capacitors, Inductors, Diodes, Ferrites, LEDs (Straightforward 2 Pads)
+    # 2. Potentiometers / Trimmers (3 terminals)
     # -------------------------------------------------------------
-    is_passive_prefix = des_prefix in ["R", "C", "L", "D", "FB", "F", "Z", "LED"]
+    if des_prefix in ["RV", "POT"] or any(kw in text_to_check for kw in ["POTENTIOMETER", "TRIMMER", "TRIMPOT", "3296"]):
+        return {
+            "pads_per_unit": 3,
+            "pad_type": "THT" if "3296" in fp or "vertical" in fp.lower() else "SMD",
+            "package_name": "Trimmer / Potentiometer",
+            "line_total_pads": 3 * qty,
+            "confidence": 1.0,
+            "is_manual": False,
+            "resolution_source": "Potentiometer Rule (3 Pins)",
+            "datasheet_url": datasheet_url,
+            "google_pinout_url": google_url,
+            "notes": "3-terminal variable resistor"
+        }
+
+    # -------------------------------------------------------------
+    # 3. Resistors, Capacitors, Inductors, Diodes, Ferrites, LEDs (Straightforward 2 Pads)
+    # -------------------------------------------------------------
+    is_passive_prefix = des_prefix in [
+        "R", "C", "L", "D", "FB", "F", "Z", "LED",
+        "RN", "RA", "RP", "RES", "CAP", "IND", "DIO", "DIODE", "CR", "RT", "NTC", "PTC", "MOV", "PR", "TR"
+    ] or bool(re.match(r'^(R|C|L|D|FB|F|Z|LED|RN|RA|RP|RES|CAP|IND|DIO|CR|RT|NTC|PTC)\d*$', first_des, re.IGNORECASE))
+
     is_passive_text = any(
         kw in text_to_check for kw in [
-            "RESISTOR", "CAPACITOR", "INDUCTOR", "FERRITE", "FUSE", "ZENER",
-            "DIODE", "LED", "MLCC", "0603", "0805", "0402", "1206", "1210",
-            "1812", "2010", "2512", "SOD-123", "SOD-323", "SMA", "SMB", "SMC",
-            "MINIMELF", "MELF", "SMF"
+            "RESISTOR", "CAPACITOR", "INDUCTOR", "FERRITE", "FUSE", "ZENER", "ZENOR",
+            "DIODE", "LED", "MLCC", "BEAD", "CHOKE",
+            "01005", "0201", "0402", "0603", "0805", "1206", "1210",
+            "1812", "2010", "2512", "SOD-123", "SOD-323", "SOD-523", "SOD-923",
+            "SMA", "SMB", "SMC", "MINIMELF", "MELF", "SMF", "DO-35", "DO-41",
+            "CD32", "CD43", "CD54", "CD75", "CD104", "CD105", "SWPA", "NR4018", "NR3015"
+        ]
+    ) or any(
+        re.search(pat, text_to_check, re.IGNORECASE) for pat in [
+            r'\b\d+(?:\.\d+)?\s*(?:[KMR]|OHM|OHMS|Ω)\b',
+            r'\b\d+[KMR]\d*\b',
+            r'\b\d+(?:\.\d+)?\s*(?:[PNU]?F|UF|PF|NF)\b',
+            r'\b\d+(?:\.\d+)?\s*(?:[UNM]?H|UH|NH|MH)\b',
+            r'(?:^|[^a-zA-Z0-9])[RC]_(\d{4})(?=[^a-zA-Z0-9]|$)',
+            r'(?:^|[^a-zA-Z0-9])[RC](\d{4})(?=[^a-zA-Z0-9]|$)',
+            r'\b(CP_ELEC|CP_RADIAL|RADIAL|AXIAL)\b',
+            r'\b(RES_SMD|CAP_SMD|IND_SMD|RESISTOR_SMD|CAPACITOR_SMD|INDUCTOR_SMD|DIODE_SMD)\b'
         ]
     )
 
     if is_passive_prefix or is_passive_text:
         # Check if it is a resistor array / resistor network
-        if any(arr in text_to_check for arr in ["ARRAY", "RPACK", "NET", "RN", "EXB", "CAY"]):
-            m_arr = re.search(r'(\d+)X(\d+)|(\d+)[-_]?(?:PIN|RES|WAY)', text_to_check)
+        is_array = (
+            any(arr in text_to_check for arr in ["ARRAY", "RPACK", "EXB", "CAY"])
+            or bool(re.search(r'\b(RN|RP|RA|R-NET|RES_NET)\b', text_to_check))
+            or des_prefix in ["RN", "RA", "RP"]
+        )
+        if is_array:
+            m_arr = re.search(r'(\d+)[Xx](\d+)|(\d+)[-_]?(?:PIN|RES|WAY|PAD)', text_to_check)
             if m_arr:
-                elem_count = int(m_arr.group(1) or m_arr.group(3))
-                pads = elem_count * 2
-                return {
-                    "pads_per_unit": pads,
-                    "pad_type": "SMD",
-                    "package_name": f"Resistor Array ({pads}-pad)",
-                    "line_total_pads": pads * qty,
-                    "confidence": 0.95,
-                    "is_manual": False,
-                    "resolution_source": "Array Heuristic",
-                    "datasheet_url": datasheet_url,
-                    "google_pinout_url": google_url,
-                    "notes": f"Multi-resistor network ({pads} pads)"
-                }
+                if m_arr.group(1) and m_arr.group(2):
+                    g1 = int(m_arr.group(1))
+                    g2 = int(m_arr.group(2))
+                    if g2 in [402, 603, 805, 1206, 1608, 2012] or g2 > 20:
+                        pads = g1 * 2
+                    else:
+                        pads = g1 * g2
+                elif m_arr.group(3):
+                    pads = int(m_arr.group(3))
+                else:
+                    pads = 8
+            else:
+                pads = 8
+            return {
+                "pads_per_unit": pads,
+                "pad_type": "SMD",
+                "package_name": f"Resistor Array ({pads}-pad)",
+                "line_total_pads": pads * qty,
+                "confidence": 0.95,
+                "is_manual": False,
+                "resolution_source": "Array Heuristic",
+                "datasheet_url": datasheet_url,
+                "google_pinout_url": google_url,
+                "notes": f"Multi-resistor network ({pads} pads)"
+            }
 
         # Check for electrolytic / radial THT capacitors vs SMD chip capacitors
-        is_tht = any(th in fp.lower() for th in ["radial", "tht", "through_hole", "dip", "axial"])
-        # E.g. CP_Elec_6.3x4.5 is typically SMD aluminum electrolytic (2 pads)
+        is_tht = any(th in fp.lower() for th in ["radial", "tht", "through_hole", "dip", "axial", "do-35", "do-41"])
         pad_type = "THT" if is_tht else "SMD"
         pkg = "Chip 2-Pad"
-        if re.search(r'\b(0201|0402|0603|0805|1206|1210|2512)\b', fp):
-            m_pkg = re.search(r'\b(0201|0402|0603|0805|1206|1210|2512)\b', fp)
+        m_pkg = re.search(r'\b(01005|0201|0402|0603|0805|1206|1210|2512)\b', fp)
+        if m_pkg:
             pkg = f"SMD {m_pkg.group(1)}"
-        elif "SOD" in fp:
+        elif "SOD" in fp.upper():
             pkg = "SOD Diode"
         elif "CP_ELEC" in fp.upper():
             pkg = "Electrolytic Cap"
@@ -198,7 +258,7 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     # -------------------------------------------------------------
-    # 3. Testpoints, Solder Jumpers, Fiducials
+    # 4. Testpoints, Solder Jumpers, Fiducials
     # -------------------------------------------------------------
     if des_prefix == "TP" or "TESTPOINT" in text_to_check:
         return {
@@ -245,23 +305,6 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     # -------------------------------------------------------------
-    # 4. Potentiometers / Trimmers
-    # -------------------------------------------------------------
-    if des_prefix in ["RV", "POT", "VR"] or "POTENTIOMETER" in text_to_check or "3296" in text_to_check:
-        return {
-            "pads_per_unit": 3,
-            "pad_type": "THT" if "3296" in fp or "vertical" in fp.lower() else "SMD",
-            "package_name": "Trimmer / Potentiometer",
-            "line_total_pads": 3 * qty,
-            "confidence": 1.0,
-            "is_manual": False,
-            "resolution_source": "Potentiometer Rule (3 Pins)",
-            "datasheet_url": datasheet_url,
-            "google_pinout_url": google_url,
-            "notes": "3-terminal variable resistor"
-        }
-
-    # -------------------------------------------------------------
     # 5. Push Buttons / Tact Switches
     # -------------------------------------------------------------
     if des_prefix in ["SW", "BTN", "KEY"] or "SWITCH" in text_to_check or "PUSH" in text_to_check:
@@ -270,7 +313,7 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
             pads = 3
         elif "DPDT" in text_to_check or "6PIN" in text_to_check:
             pads = 6
-        is_smd = "SMD" in text_to_check or "SKRK" in text_to_check or "TACT" in text_to_check
+        is_smd = any(s in text_to_check for s in ["SMD", "SKRK", "TACT"])
         return {
             "pads_per_unit": pads,
             "pad_type": "SMD" if is_smd else "THT",
@@ -333,7 +376,7 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
             "line_total_pads": pads * qty,
             "confidence": 0.98,
             "is_manual": False,
-            "resolution_source": f"SOT Package Classifier",
+            "resolution_source": "SOT Package Classifier",
             "datasheet_url": datasheet_url,
             "google_pinout_url": google_url,
             "notes": f"Small Outline Transistor ({pads} pads)"
@@ -360,7 +403,7 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
     # -------------------------------------------------------------
     # 8. SOIC, SOP, SSOP, TSSOP, MSOP, DIP IC Packages
     # -------------------------------------------------------------
-    m_soic = re.search(r'\b(SOIC|TSSOP|SSOP|MSOP|SOP|DIP|PDIP)[-_]?(\d+)(?:W)?\b', fp, re.IGNORECASE)
+    m_soic = re.search(r'\b(SOIC|TSSOP|SSOP|MSOP|SOP|DIP|PDIP)[-_]?(\d+)(?:W)?(?=[^0-9a-zA-Z]|$)', fp, re.IGNORECASE)
     if m_soic:
         pkg_name = m_soic.group(1).upper()
         pads = int(m_soic.group(2))
@@ -381,7 +424,7 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
     # -------------------------------------------------------------
     # 9. QFP, LQFP, TQFP, PQFP, VQFP Packages
     # -------------------------------------------------------------
-    m_qfp = re.search(r'\b(LQFP|TQFP|PQFP|QFP|VQFP)[-_]?(\d+)\b', fp, re.IGNORECASE)
+    m_qfp = re.search(r'\b(LQFP|TQFP|PQFP|QFP|VQFP)[-_]?(\d+)(?=[^0-9a-zA-Z]|$)', fp, re.IGNORECASE)
     if m_qfp:
         pkg_name = m_qfp.group(1).upper()
         pads = int(m_qfp.group(2))
@@ -420,7 +463,7 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
     # -------------------------------------------------------------
     # 11. QFN, DFN, UDFN, WDFN Packages (Perimeter Leads + Exposed Pad)
     # -------------------------------------------------------------
-    m_qfn = re.search(r'\b(QFN|DFN|UDFN|WDFN|VQFN|WQFN|HVQFN)[-_]?(\d+)\b', fp, re.IGNORECASE)
+    m_qfn = re.search(r'\b(QFN|DFN|UDFN|WDFN|VQFN|WQFN|HVQFN)[-_]?(\d+)(?=[^0-9a-zA-Z]|$)', fp, re.IGNORECASE)
     if m_qfn:
         pkg_name = m_qfn.group(1).upper()
         leads = int(m_qfn.group(2))
@@ -443,7 +486,7 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
     # -------------------------------------------------------------
     # 12. Ball Grid Array (BGA, FBGA, CSP)
     # -------------------------------------------------------------
-    m_bga = re.search(r'\b(BGA|FBGA|VFBGA|LFBGA|WLCSP|CSP)[-_]?(\d+)\b', fp, re.IGNORECASE)
+    m_bga = re.search(r'\b(BGA|FBGA|VFBGA|LFBGA|WLCSP|CSP)[-_]?(\d+)(?=[^0-9a-zA-Z]|$)', fp, re.IGNORECASE)
     if m_bga:
         pkg_name = m_bga.group(1).upper()
         balls = int(m_bga.group(2))
@@ -464,38 +507,45 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
     # 13. Headers, Pin Connectors, Terminal Blocks (Rows x Pins)
     # -------------------------------------------------------------
     m_hdr = re.search(
-        r'(?:PinHeader|IDC[-_]Header|Header|Pin_Header|Connector_PinHeader|Conn|JST)[-_]?(?:[A-Za-z0-9]+[-_])?(\d+)x0?(\d+)',
+        r'(?:PinHeader|IDC[-_]Header|Header|Pin_Header|Connector_PinHeader|Conn|JST|TerminalBlock)[-_]?(?:[A-Za-z0-9]+[-_])*(?:0?(\d+)[xX]0?(\d+)|0?(\d+)[-_]?P(?:in)?)',
         fp,
         re.IGNORECASE
     )
     if not m_hdr:
-        m_hdr = re.search(r'Conn[-_]0?(\d+)x0?(\d+)', desc, re.IGNORECASE)
+        m_hdr = re.search(r'(?:^|[^0-9a-zA-Z])0?(\d+)[xX]0?(\d+)(?=[^0-9a-zA-Z]|$)', fp)
     if not m_hdr:
-        m_hdr = re.search(r'\b(\d+)x0?(\d+)\b', fp)
+        m_hdr = re.search(r'(?:^|[^0-9a-zA-Z])0?(\d+)[xX]0?(\d+)(?=[^0-9a-zA-Z]|$)', desc)
+    if not m_hdr:
+        m_hdr = re.search(r'\b(\d+)[-_]?(?:pin|way|pos|p)\b', text_to_check, re.IGNORECASE)
 
-    if m_hdr and (des_prefix in ["J", "P", "CONN", "HDR"] or "HEADER" in text_to_check or "CONN" in text_to_check or "JST" in text_to_check):
-        rows = int(m_hdr.group(1))
-        cols = int(m_hdr.group(2))
-        pads = rows * cols
+    if m_hdr and (des_prefix in ["J", "P", "CONN", "HDR", "CN", "TB"] or any(k in text_to_check for k in ["HEADER", "CONN", "JST", "TERMINAL", "MOLEX", "PLUG", "SOCKET", "JACK", "PIN"])):
+        if m_hdr.group(2):
+            rows = int(m_hdr.group(1))
+            cols = int(m_hdr.group(2))
+            pads = rows * cols
+        elif m_hdr.group(3):
+            pads = int(m_hdr.group(3))
+        else:
+            pads = int(m_hdr.group(1))
         is_tht = not any(s in fp.lower() for s in ["smd", "smt"])
         return {
             "pads_per_unit": pads,
             "pad_type": "THT" if is_tht else "SMD",
-            "package_name": f"Header {rows}x{cols} ({pads} pins)",
+            "package_name": f"Connector ({pads} pins)",
             "line_total_pads": pads * qty,
             "confidence": 0.98,
             "is_manual": False,
-            "resolution_source": f"Pin Header Calculator ({rows}x{cols})",
+            "resolution_source": f"Connector Calculator ({pads} pins)",
             "datasheet_url": datasheet_url,
             "google_pinout_url": google_url,
-            "notes": f"{rows}x{cols} pin array ({pads} pins)"
+            "notes": f"Connector / header ({pads} pins)"
         }
 
     # -------------------------------------------------------------
     # 14. Standard Transistors / Triacs (Designator Q or T)
     # -------------------------------------------------------------
-    if des_prefix in ["Q", "T"]:
-        is_tht = any(th in fp.lower() for th in ["to-92", "to-220", "tht", "through_hole"])
+    if des_prefix in ["Q", "T"] or any(k in text_to_check for k in ["TRANSISTOR", "MOSFET", "BJT", "NPN", "PNP", "IGBT"]):
+        is_tht = any(th in fp.lower() for th in ["to-92", "to-220", "to-247", "tht", "through_hole"])
         return {
             "pads_per_unit": 3,
             "pad_type": "THT" if is_tht else "SMD",
@@ -559,6 +609,25 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
             "google_pinout_url": google_url,
             "notes": "9 card signal/detect pins + 4 shield anchors"
         }
+
+    # Fallback heuristic: check if explicit pin count is mentioned in the footprint string
+    m_pins = re.search(r'\b(\d+)\s*(?:PIN|PINS|PINOUT|LEAD|LEADS|PAD|PADS|P)\b', text_to_check)
+    if m_pins:
+        p_count = int(m_pins.group(1))
+        if 1 <= p_count <= 200:
+            is_tht = any(th in fp.lower() for th in ["tht", "through_hole", "dip", "radial", "axial"])
+            return {
+                "pads_per_unit": p_count,
+                "pad_type": "THT" if is_tht else "SMD",
+                "package_name": f"Generic Package ({p_count} pins)",
+                "line_total_pads": p_count * qty,
+                "confidence": 0.80,
+                "is_manual": False,
+                "resolution_source": f"Lead Count Heuristic ({p_count} Pins)",
+                "datasheet_url": datasheet_url,
+                "google_pinout_url": google_url,
+                "notes": f"Derived from package description ({p_count} pins)"
+            }
 
     # -------------------------------------------------------------
     # 16. Fallback: Unknown Component - Needs User Manual Feed
