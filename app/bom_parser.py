@@ -21,7 +21,7 @@ def normalize_header(header: str) -> str:
 def map_column_types(headers: List[str]) -> Dict[str, Optional[str]]:
     """
     Maps actual BOM column names to standard keys:
-    designator, description, footprint, quantity, mpn.
+    designator, description, footprint, quantity, mpn, value.
     Distinguishes item counter columns (e.g. 'Item #', 'Sl No') from component descriptions.
     """
     mapping: Dict[str, Optional[str]] = {
@@ -29,7 +29,8 @@ def map_column_types(headers: List[str]) -> Dict[str, Optional[str]]:
         'description': None,
         'footprint': None,
         'quantity': None,
-        'mpn': None
+        'mpn': None,
+        'value': None
     }
 
     def is_item_index_col(norm_hdr: str) -> bool:
@@ -67,6 +68,11 @@ def map_column_types(headers: List[str]) -> Dict[str, Optional[str]]:
             mapping['mpn'] = col
             continue
 
+        # Value
+        if mapping['value'] is None and any(k in norm for k in ['value', 'val']):
+            mapping['value'] = col
+            continue
+
         # Description / Value (excluding item counter columns)
         if mapping['description'] is None and not is_item_index_col(norm) and any(k in norm for k in ['description', 'designation', 'value', 'comment', 'spec', 'partname', 'componentname', 'itemdescription', 'itemname', 'val']):
             mapping['description'] = col
@@ -75,17 +81,21 @@ def map_column_types(headers: List[str]) -> Dict[str, Optional[str]]:
     # Second pass: Secondary description words if not yet found
     if mapping['description'] is None:
         for col in cleaned_headers:
-            if col in [mapping['designator'], mapping['quantity'], mapping['footprint'], mapping['mpn']]:
+            if col in [mapping['designator'], mapping['quantity'], mapping['footprint'], mapping['mpn'], mapping['value']]:
                 continue
             norm = normalize_header(col)
-            if not is_item_index_col(norm) and any(k in norm for k in ['name', 'title', 'summary', 'device']):
+            if not is_item_index_col(norm) and any(k in norm for k in ['name', 'title', 'summary', 'device', 'comment']):
                 mapping['description'] = col
                 break
+
+    # If description is still None but value is found, use value as description
+    if mapping['description'] is None and mapping['value'] is not None:
+        mapping['description'] = mapping['value']
 
     # Third pass fallback: Take the first unassigned non-numeric, non-index column
     if mapping['description'] is None:
         for col in cleaned_headers:
-            if col in [mapping['designator'], mapping['quantity'], mapping['footprint'], mapping['mpn']]:
+            if col in [mapping['designator'], mapping['quantity'], mapping['footprint'], mapping['mpn'], mapping['value']]:
                 continue
             norm = normalize_header(col)
             if not is_item_index_col(norm) and norm and not norm.isdigit() and 'unnamed' not in norm:
@@ -180,13 +190,14 @@ def generate_search_query(description: str, footprint: str, mpn: str = "") -> st
     return query if query else desc
 
 
-def find_best_header_row(raw_df: pd.DataFrame) -> int:
+def find_best_header_row(raw_df: pd.DataFrame) -> tuple:
     """
     Scans the first 25 rows of a dataframe to find the row most likely
     to be the column header row (e.g. containing 'Designator', 'Quantity', etc.).
+    Returns (best_row_idx, max_score). If max_score <= 0, no valid header was found.
     """
     best_row_idx = 0
-    max_score = -1
+    max_score = 0
 
     keywords = [
         'designator', 'reference', 'refdes', 'ref', 'parts', 'component',
@@ -206,9 +217,113 @@ def find_best_header_row(raw_df: pd.DataFrame) -> int:
             max_score = score
             best_row_idx = r_idx
 
-    if max_score <= 0:
-        return 0
-    return best_row_idx
+    return best_row_idx, max_score
+
+
+def infer_columns_from_content(df: pd.DataFrame) -> Dict[str, Optional[Any]]:
+    """
+    Intelligently determines which column maps to designator, quantity,
+    footprint, description, value, and mpn by inspecting cell contents
+    when explicit headers are missing (headerless BOMs) or ambiguous.
+    """
+    mapping: Dict[str, Optional[Any]] = {
+        'designator': None,
+        'description': None,
+        'footprint': None,
+        'quantity': None,
+        'mpn': None,
+        'value': None
+    }
+    col_scores: Dict[str, Dict[Any, float]] = {k: {} for k in mapping}
+    item_index_cols = set()
+
+    des_pat = re.compile(r'^[A-Za-z]{1,4}\d+([,\s\-/]+[A-Za-z]{1,4}\d+)*$', re.IGNORECASE)
+    des_token = re.compile(r'\b[A-Za-z]{1,4}\d+\b')
+    val_pat = re.compile(r'^\s*\d+(?:\.\d+)?\s*(?:[pnuU]?[fF]|[kKmMgG]?[oO]?[hH][mM]?|[kKmMrReE]|[uUnNmMgG]?[hH]|[vV]|[mM][hH][zZ]|%)\s*$', re.IGNORECASE)
+    fp_keywords = [
+        '01005', '0201', '0402', '0603', '0805', '1206', '1210', '1812', '2010', '2512',
+        'sot', 'sod', 'qfn', 'qfp', 'lqfp', 'tqfp', 'dip', 'soic', 'sop', 'tssop', 'msop', 'ssop',
+        'to-220', 'to-92', 'to-247', 'to-252', 'to-263', 'd-pak', 'dpak', 'd2pak',
+        'axial', 'radial', 'smd', 'smt', 'tht', 'pitch', 'pin', 'header', 'socket', 'plug',
+        'connector', 'strip', 'pad', 'terminal', 'through_hole'
+    ]
+
+    sample_limit = min(50, len(df))
+    sample_df = df.iloc[:sample_limit]
+
+    for col in df.columns:
+        vals = [
+            str(v).strip()
+            for v in sample_df[col].dropna()
+            if str(v).strip() and str(v).lower() not in ['nan', 'none', 'null', '', 'undefined']
+        ]
+        if not vals:
+            continue
+        n_vals = len(vals)
+
+        # Check if strictly sequential integers (item_index / S.No: 1, 2, 3...)
+        try:
+            num_series = pd.to_numeric(pd.Series(vals))
+            if len(num_series) >= 3 and (num_series.diff().iloc[1:] == 1).all() and num_series.iloc[0] in [0, 1]:
+                item_index_cols.add(col)
+                continue
+        except Exception:
+            pass
+
+        # Designator scoring
+        des_full_matches = sum(1 for v in vals if des_pat.match(v))
+        des_token_matches = sum(1 for v in vals if len(des_token.findall(v)) >= 1 and len(v.split()) <= 1)
+        col_scores['designator'][col] = (max(des_full_matches, des_token_matches) / n_vals) * 100
+
+        # Quantity scoring
+        qty_count = 0
+        for v in vals:
+            try:
+                flt = float(v)
+                if 1 <= flt <= 10000 and flt == int(flt):
+                    qty_count += 1
+            except Exception:
+                pass
+        col_scores['quantity'][col] = (qty_count / n_vals) * 90 if col not in item_index_cols else 0
+
+        # Value scoring
+        val_matches = sum(1 for v in vals if val_pat.match(v))
+        col_scores['value'][col] = (val_matches / n_vals) * 100
+
+        # Footprint scoring
+        fp_matches = sum(1 for v in vals if any(k in v.lower() for k in fp_keywords))
+        col_scores['footprint'][col] = (fp_matches / n_vals) * 85
+
+        # MPN scoring (alphanumeric, has letters and digits, uppercase, len >= 5, no spaces)
+        mpn_matches = sum(
+            1 for v in vals
+            if len(v) >= 5 and re.search(r'[A-Za-z]', v) and re.search(r'\d', v)
+            and ' ' not in v and not val_pat.match(v) and not des_pat.match(v)
+        )
+        col_scores['mpn'][col] = (mpn_matches / n_vals) * 75
+
+        # Description scoring (longer text, multiple words)
+        desc_matches = sum(1 for v in vals if ' ' in v or '_' in v or len(v) > 8)
+        col_scores['description'][col] = (desc_matches / n_vals) * 60
+
+    # Greedily assign best distinct columns
+    used_cols = set(item_index_cols)
+    for role in ['designator', 'quantity', 'mpn', 'value', 'footprint', 'description']:
+        ranked = sorted(col_scores[role].items(), key=lambda x: x[1], reverse=True)
+        for c, score in ranked:
+            if c not in used_cols and score >= 20:
+                mapping[role] = c
+                used_cols.add(c)
+                break
+
+    # Fallback for description if not assigned: pick any remaining non-used column
+    if mapping['description'] is None:
+        rem = [c for c in df.columns if c not in used_cols]
+        if rem:
+            mapping['description'] = rem[0]
+            used_cols.add(rem[0])
+
+    return mapping
 
 
 def deduplicate_headers(headers: List[Any]) -> List[str]:
@@ -279,16 +394,23 @@ def parse_bom_file(file_content_or_path, filename: str = "") -> Dict[str, Any]:
             pass
 
     df = None
+    has_header = True
     if is_excel:
         try:
             stream = io.BytesIO(file_content_or_path) if is_bytes else file_content_or_path
             raw_excel = pd.read_excel(stream, header=None)
             if not raw_excel.empty:
-                header_idx = find_best_header_row(raw_excel)
-                raw_headers = deduplicate_headers(raw_excel.iloc[header_idx].tolist())
-                data_rows = raw_excel.iloc[header_idx + 1:].copy()
-                data_rows.columns = raw_headers
-                df = data_rows
+                header_idx, score = find_best_header_row(raw_excel)
+                if score > 0:
+                    raw_headers = deduplicate_headers(raw_excel.iloc[header_idx].tolist())
+                    data_rows = raw_excel.iloc[header_idx + 1:].copy()
+                    data_rows.columns = raw_headers
+                    df = data_rows
+                else:
+                    has_header = False
+                    data_rows = raw_excel.copy()
+                    data_rows.columns = [f"col_{i}" for i in range(data_rows.shape[1])]
+                    df = data_rows
         except Exception as excel_err:
             return {"status": "error", "message": f"Excel parsing failed: {str(excel_err)}", "items": []}
     else:
@@ -323,11 +445,17 @@ def parse_bom_file(file_content_or_path, filename: str = "") -> Dict[str, Any]:
                 return {"status": "error", "message": "Empty BOM file", "items": []}
 
             raw_df = pd.DataFrame(raw_rows)
-            header_idx = find_best_header_row(raw_df)
-            raw_headers = deduplicate_headers(raw_df.iloc[header_idx].tolist())
-            data_rows = raw_df.iloc[header_idx + 1:].copy()
-            data_rows.columns = raw_headers
-            df = data_rows
+            header_idx, score = find_best_header_row(raw_df)
+            if score > 0:
+                raw_headers = deduplicate_headers(raw_df.iloc[header_idx].tolist())
+                data_rows = raw_df.iloc[header_idx + 1:].copy()
+                data_rows.columns = raw_headers
+                df = data_rows
+            else:
+                has_header = False
+                data_rows = raw_df.copy()
+                data_rows.columns = [f"col_{i}" for i in range(data_rows.shape[1])]
+                df = data_rows
         except Exception as csv_err:
             return {"status": "error", "message": f"CSV parsing failed: {str(csv_err)}", "items": []}
 
@@ -336,13 +464,28 @@ def parse_bom_file(file_content_or_path, filename: str = "") -> Dict[str, Any]:
 
     # Clean and map headers
     df.columns = [str(c).strip() for c in df.columns]
-    mapping = map_column_types(list(df.columns))
+    mapping = map_column_types(list(df.columns)) if has_header else {
+        'designator': None,
+        'description': None,
+        'footprint': None,
+        'quantity': None,
+        'mpn': None,
+        'value': None
+    }
 
-    des_col = mapping['designator']
-    desc_col = mapping['description']
-    fp_col = mapping['footprint']
-    qty_col = mapping['quantity']
-    mpn_col = mapping['mpn']
+    # If headerless OR critical columns missing, infer from content
+    if not has_header or mapping.get('designator') is None or (mapping.get('footprint') is None and mapping.get('description') is None):
+        inferred = infer_columns_from_content(df)
+        for key in ['designator', 'description', 'footprint', 'quantity', 'mpn', 'value']:
+            if mapping.get(key) is None and inferred.get(key) is not None:
+                mapping[key] = inferred[key]
+
+    des_col = mapping.get('designator')
+    val_col = mapping.get('value')
+    desc_col = mapping.get('description')
+    fp_col = mapping.get('footprint')
+    qty_col = mapping.get('quantity')
+    mpn_col = mapping.get('mpn')
 
     items = []
     item_id = 1
@@ -350,19 +493,28 @@ def parse_bom_file(file_content_or_path, filename: str = "") -> Dict[str, Any]:
 
     for idx, row in df.iterrows():
         designator = safe_cell_str(row, des_col)
-        description = safe_cell_str(row, desc_col)
+        raw_val = safe_cell_str(row, val_col)
+        raw_desc = safe_cell_str(row, desc_col)
         footprint = safe_cell_str(row, fp_col)
         mpn = safe_cell_str(row, mpn_col)
+
+        # Merge value with description if value is distinct
+        if raw_val and raw_desc:
+            description = f"{raw_val} {raw_desc}".strip() if raw_val not in raw_desc else raw_desc
+        elif raw_val:
+            description = raw_val
+        else:
+            description = raw_desc
 
         # Skip rows where both designator and description are blank
         if not designator and not description:
             continue
 
         # Skip rows that repeat headers or are summary footers
-        norm_row = f"{designator} {description}".lower()
-        if 'designator' in norm_row and ('description' in norm_row or 'refdes' in norm_row):
+        full_row_text = f"{designator} {description} {footprint} {mpn}".lower()
+        if 'designator' in full_row_text and ('description' in full_row_text or 'refdes' in full_row_text):
             continue
-        if re.search(r'^(total components|total parts|line count|summary|grand total):', norm_row):
+        if any(term in full_row_text for term in ['total bom cost', 'grand total', 'total components', 'total parts', 'line count', 'summary:']):
             continue
 
         # Quantity calculation

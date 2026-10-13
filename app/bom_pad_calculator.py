@@ -22,8 +22,14 @@ KNOWN_MPN_DATABASE: Dict[str, Dict[str, Any]] = {
     "ATMEGA328P-PU": {"pads": 28, "type": "THT", "package": "DIP-28", "leads": 28, "thermal_pad": 0},
     "ESP32-WROOM-32": {"pads": 39, "type": "SMD", "package": "Module-38+EP", "leads": 38, "thermal_pad": 1},
     "ESP32-WROOM": {"pads": 39, "type": "SMD", "package": "Module-38+EP", "leads": 38, "thermal_pad": 1},
+    "ESP32-S3-WROOM": {"pads": 41, "type": "SMD", "package": "Module-40+EP", "leads": 40, "thermal_pad": 1},
+    "ESP32-S3": {"pads": 41, "type": "SMD", "package": "Module-40+EP", "leads": 40, "thermal_pad": 1},
+    "ESP32-S2": {"pads": 41, "type": "SMD", "package": "Module-40+EP", "leads": 40, "thermal_pad": 1},
+    "ESP32-C3": {"pads": 19, "type": "SMD", "package": "Module-18+EP", "leads": 18, "thermal_pad": 1},
     "ESP8266-12F": {"pads": 16, "type": "SMD", "package": "Module-16", "leads": 16, "thermal_pad": 0},
     "RP2040": {"pads": 57, "type": "SMD", "package": "QFN-56+EP", "leads": 56, "thermal_pad": 1},
+    "MAX98357A": {"pads": 17, "type": "SMD", "package": "TQFN-16+EP", "leads": 16, "thermal_pad": 1},
+    "MAX98357": {"pads": 17, "type": "SMD", "package": "TQFN-16+EP", "leads": 16, "thermal_pad": 1},
 
     # Power Management & Regulators
     "AP7366EA": {"pads": 5, "type": "SMD", "package": "SOT-23-5", "leads": 5, "thermal_pad": 0},
@@ -185,14 +191,14 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
         ]
     ) or any(
         re.search(pat, text_to_check, re.IGNORECASE) for pat in [
-            r'\b\d+(?:\.\d+)?\s*(?:[KMR]|OHM|OHMS|Ω)\b',
-            r'\b\d+[KMR]\d*\b',
+            r'\b\d+(?:\.\d+)?\s*(?:[KMRE]|OHM|OHMS|Ω)\b',
+            r'\b\d+[KMRE]\d*\b',
             r'\b\d+(?:\.\d+)?\s*(?:[PNU]?F|UF|PF|NF)\b',
             r'\b\d+(?:\.\d+)?\s*(?:[UNM]?H|UH|NH|MH)\b',
-            r'(?:^|[^a-zA-Z0-9])[RC]_(\d{4})(?=[^a-zA-Z0-9]|$)',
-            r'(?:^|[^a-zA-Z0-9])[RC](\d{4})(?=[^a-zA-Z0-9]|$)',
+            r'(?:^|[^a-zA-Z0-9])[RC]_?(\d{4})(?=[^a-zA-Z0-9]|$)',
             r'\b(CP_ELEC|CP_RADIAL|RADIAL|AXIAL)\b',
-            r'\b(RES_SMD|CAP_SMD|IND_SMD|RESISTOR_SMD|CAPACITOR_SMD|INDUCTOR_SMD|DIODE_SMD)\b'
+            r'\b(RES_SMD|CAP_SMD|IND_SMD|RESISTOR_SMD|CAPACITOR_SMD|INDUCTOR_SMD|DIODE_SMD)\b',
+            r'\b(SMD_CERAMIC_CAPACITOR|CERAMIC_CAPACITOR|SMD_RESISTOR|CHIP_RESISTOR)\b'
         ]
     )
 
@@ -460,16 +466,14 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
             "notes": f"IPC standard designation ({pads} pads)"
         }
 
-    # -------------------------------------------------------------
-    # 11. QFN, DFN, UDFN, WDFN Packages (Perimeter Leads + Exposed Pad)
-    # -------------------------------------------------------------
-    m_qfn = re.search(r'\b(QFN|DFN|UDFN|WDFN|VQFN|WQFN|HVQFN)[-_]?(\d+)(?=[^0-9a-zA-Z]|$)', fp, re.IGNORECASE)
+    m_qfn = re.search(r'\b(TQFN|QFN|DFN|UDFN|WDFN|VQFN|WQFN|HVQFN|MLF)[-_]?(\d+)(?:[-_](\d+)?(?:EP)?)?(?=[^0-9a-zA-Z]|$)', fp, re.IGNORECASE)
     if m_qfn:
         pkg_name = m_qfn.group(1).upper()
         leads = int(m_qfn.group(2))
-        # Almost all standard QFN/DFN have a thermal ground pad on bottom
-        has_ep = "UDFN" not in pkg_name
-        total_pads = leads + (1 if has_ep else 0)
+        # Check for exposed pad
+        has_ep = "UDFN" not in pkg_name or bool(re.search(r'EP', fp, re.IGNORECASE))
+        ep_count = int(m_qfn.group(3)) if m_qfn.group(3) else (1 if has_ep else 0)
+        total_pads = leads + ep_count
         return {
             "pads_per_unit": total_pads,
             "pad_type": "SMD",
@@ -516,17 +520,17 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
     if not m_hdr:
         m_hdr = re.search(r'(?:^|[^0-9a-zA-Z])0?(\d+)[xX]0?(\d+)(?=[^0-9a-zA-Z]|$)', desc)
     if not m_hdr:
-        m_hdr = re.search(r'\b(\d+)[-_]?(?:pin|way|pos|p)\b', text_to_check, re.IGNORECASE)
+        m_hdr = re.search(r'\b(\d+)\s*[-_]?\s*(?:pin|way|pos|p|pole|terminal|contact)\b', text_to_check, re.IGNORECASE)
 
     if m_hdr and (des_prefix in ["J", "P", "CONN", "HDR", "CN", "TB"] or any(k in text_to_check for k in ["HEADER", "CONN", "JST", "TERMINAL", "MOLEX", "PLUG", "SOCKET", "JACK", "PIN"])):
-        if m_hdr.group(2):
-            rows = int(m_hdr.group(1))
-            cols = int(m_hdr.group(2))
+        groups = m_hdr.groups()
+        if len(groups) >= 2 and groups[0] is not None and groups[1] is not None:
+            rows = int(groups[0])
+            cols = int(groups[1])
             pads = rows * cols
-        elif m_hdr.group(3):
-            pads = int(m_hdr.group(3))
         else:
-            pads = int(m_hdr.group(1))
+            valid_g = [g for g in groups if g is not None]
+            pads = int(valid_g[0]) if valid_g else 2
         is_tht = not any(s in fp.lower() for s in ["smd", "smt"])
         return {
             "pads_per_unit": pads,
@@ -542,8 +546,26 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     # -------------------------------------------------------------
-    # 14. Standard Transistors / Triacs (Designator Q or T)
+    # 14. Standard Transistors / Triacs (Designator Q or T) & TO Packages
     # -------------------------------------------------------------
+    m_to = re.search(r'TO[-_]?(220|92|247|252|263)(?:[-_](\d+))?', text_to_check, re.IGNORECASE)
+    if m_to:
+        sub = m_to.group(2)
+        pads = int(sub) if sub else 3
+        is_tht = m_to.group(1) in ["220", "92", "247"]
+        return {
+            "pads_per_unit": pads,
+            "pad_type": "THT" if is_tht else "SMD",
+            "package_name": f"TO-{m_to.group(1)} ({pads} pins)",
+            "line_total_pads": pads * qty,
+            "confidence": 0.95,
+            "is_manual": False,
+            "resolution_source": "TO Package Classifier",
+            "datasheet_url": datasheet_url,
+            "google_pinout_url": google_url,
+            "notes": f"Standard TO-{m_to.group(1)} power package ({pads} pins)"
+        }
+
     if des_prefix in ["Q", "T"] or any(k in text_to_check for k in ["TRANSISTOR", "MOSFET", "BJT", "NPN", "PNP", "IGBT"]):
         is_tht = any(th in fp.lower() for th in ["to-92", "to-220", "to-247", "tht", "through_hole"])
         return {
@@ -551,7 +573,7 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
             "pad_type": "THT" if is_tht else "SMD",
             "package_name": "Transistor 3-Pin",
             "line_total_pads": 3 * qty,
-            "confidence": 0.85,
+            "confidence": 0.90,
             "is_manual": False,
             "resolution_source": "Transistor Default (3 Pads)",
             "datasheet_url": datasheet_url,
@@ -560,7 +582,110 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     # -------------------------------------------------------------
-    # 15. Specialized Connectors (Barrel Jack, USB, Audio Jack, Battery)
+    # 15. Specialized Electromechanical (Buzzer, LCD, Banana, Motor, IR, Hall, Joystick)
+    # -------------------------------------------------------------
+    if des_prefix in ["BZ", "SPK", "LS", "BEEP"] or any(k in text_to_check for k in ["BUZZER", "BEEPER", "SPEAKER"]):
+        is_tht = any(th in fp.lower() for th in ["rm", "tht", "dip", "12x9", "through_hole"])
+        return {
+            "pads_per_unit": 2,
+            "pad_type": "THT" if is_tht else "SMD",
+            "package_name": "Buzzer (2 pins)",
+            "line_total_pads": 2 * qty,
+            "confidence": 0.95,
+            "is_manual": False,
+            "resolution_source": "Buzzer / Audio Rule",
+            "datasheet_url": datasheet_url,
+            "google_pinout_url": google_url,
+            "notes": "2-pin acoustic device"
+        }
+
+    if any(k in text_to_check for k in ["LCD1602", "16X2", "1602"]):
+        return {
+            "pads_per_unit": 16,
+            "pad_type": "THT",
+            "package_name": "LCD 16x2 Display (16 pins)",
+            "line_total_pads": 16 * qty,
+            "confidence": 0.98,
+            "is_manual": False,
+            "resolution_source": "LCD Module Standard (16 pins)",
+            "datasheet_url": datasheet_url,
+            "google_pinout_url": google_url,
+            "notes": "Standard HD44780 16-pin character LCD header"
+        }
+
+    if any(k in text_to_check for k in ["BANANA", "BINDING POST", "TEST_JACK", "TIP_JACK"]):
+        return {
+            "pads_per_unit": 1,
+            "pad_type": "THT",
+            "package_name": "Banana Socket (1 pin)",
+            "line_total_pads": 1 * qty,
+            "confidence": 0.95,
+            "is_manual": False,
+            "resolution_source": "Banana Socket Rule",
+            "datasheet_url": datasheet_url,
+            "google_pinout_url": google_url,
+            "notes": "Single terminal PCB mount banana socket"
+        }
+
+    if any(k in text_to_check for k in ["VIBRATION MOTOR", "COIN MOTOR", "VIB_MOTOR"]):
+        is_smd = "smd" in fp.lower()
+        return {
+            "pads_per_unit": 2,
+            "pad_type": "SMD" if is_smd else "THT",
+            "package_name": "Vibration Motor (2 pads)",
+            "line_total_pads": 2 * qty,
+            "confidence": 0.95,
+            "is_manual": False,
+            "resolution_source": "Vibration Motor Rule",
+            "datasheet_url": datasheet_url,
+            "google_pinout_url": google_url,
+            "notes": "2-pad motor power connection"
+        }
+
+    if any(k in text_to_check for k in ["TSOP", "IR_RECEIVER", "VS1838", "IRM-"]):
+        return {
+            "pads_per_unit": 3,
+            "pad_type": "THT",
+            "package_name": "IR Receiver (3 pins)",
+            "line_total_pads": 3 * qty,
+            "confidence": 0.95,
+            "is_manual": False,
+            "resolution_source": "IR Demodulator Rule",
+            "datasheet_url": datasheet_url,
+            "google_pinout_url": google_url,
+            "notes": "3-pin infrared receiver (VCC, GND, OUT)"
+        }
+
+    if any(k in text_to_check for k in ["HALLEFFECT", "HALL SENSOR", "HALL_SENSOR", "SS49E", "A3144", "49E_"]):
+        return {
+            "pads_per_unit": 3,
+            "pad_type": "THT",
+            "package_name": "Hall Effect Sensor (3 pins)",
+            "line_total_pads": 3 * qty,
+            "confidence": 0.95,
+            "is_manual": False,
+            "resolution_source": "Hall Sensor Rule",
+            "datasheet_url": datasheet_url,
+            "google_pinout_url": google_url,
+            "notes": "3-pin magnetic sensor"
+        }
+
+    if "JOYSTICK" in text_to_check:
+        return {
+            "pads_per_unit": 5,
+            "pad_type": "THT",
+            "package_name": "Thumb Joystick (5 pins)",
+            "line_total_pads": 5 * qty,
+            "confidence": 0.92,
+            "is_manual": False,
+            "resolution_source": "Joystick Module Rule",
+            "datasheet_url": datasheet_url,
+            "google_pinout_url": google_url,
+            "notes": "Dual-axis potentiometer + push button"
+        }
+
+    # -------------------------------------------------------------
+    # 16. Specialized Connectors (Barrel Jack, USB, Audio Jack, Battery)
     # -------------------------------------------------------------
     if "BARREL" in text_to_check or "JACK-DC" in text_to_check:
         return {
@@ -610,8 +735,8 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
             "notes": "9 card signal/detect pins + 4 shield anchors"
         }
 
-    # Fallback heuristic: check if explicit pin count is mentioned in the footprint string
-    m_pins = re.search(r'\b(\d+)\s*(?:PIN|PINS|PINOUT|LEAD|LEADS|PAD|PADS|P)\b', text_to_check)
+    # Universal pin count heuristic (supporting underscores, dashes, spaces)
+    m_pins = re.search(r'(?:^|[^0-9a-zA-Z])0?(\d+)\s*[-_]?\s*(?:PIN|PINS|PINOUT|LEAD|LEADS|PAD|PADS|P|WAY|POS)(?=[^0-9a-zA-Z]|$)', text_to_check, re.IGNORECASE)
     if m_pins:
         p_count = int(m_pins.group(1))
         if 1 <= p_count <= 200:
@@ -621,7 +746,7 @@ def estimate_component_pads(item: Dict[str, Any]) -> Dict[str, Any]:
                 "pad_type": "THT" if is_tht else "SMD",
                 "package_name": f"Generic Package ({p_count} pins)",
                 "line_total_pads": p_count * qty,
-                "confidence": 0.80,
+                "confidence": 0.85,
                 "is_manual": False,
                 "resolution_source": f"Lead Count Heuristic ({p_count} Pins)",
                 "datasheet_url": datasheet_url,

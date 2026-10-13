@@ -1228,6 +1228,12 @@ const KNOWN_MPNS_CLIENT = {
   '54-00174': { pads: 4, type: 'SMD', package: 'Audio Jack 4-pin' },
   '5400174': { pads: 4, type: 'SMD', package: 'Audio Jack 4-pin' },
   'NRJ4HH': { pads: 4, type: 'THT', package: 'Neutrik 1/4in Jack 4-pin' },
+  'ESP32-S3-WROOM': { pads: 41, type: 'SMD', package: 'Module-40+EP' },
+  'ESP32-S3': { pads: 41, type: 'SMD', package: 'Module-40+EP' },
+  'ESP32-S2': { pads: 41, type: 'SMD', package: 'Module-40+EP' },
+  'ESP32-C3': { pads: 19, type: 'SMD', package: 'Module-18+EP' },
+  'MAX98357A': { pads: 17, type: 'SMD', package: 'TQFN-16+EP' },
+  'MAX98357': { pads: 17, type: 'SMD', package: 'TQFN-16+EP' },
   'MICROSDCARD': { pads: 13, type: 'SMD', package: 'MicroSD Socket' },
   'MICROSD': { pads: 13, type: 'SMD', package: 'MicroSD Socket' }
 };
@@ -1298,14 +1304,13 @@ function estimateComponentPads(item) {
   ].includes(desPrefix) || /^(R|C|L|D|FB|F|Z|LED|RN|RA|RP|RES|CAP|IND|DIO|CR|RT|NTC|PTC)\d*$/i.test(firstDes);
 
   const isPassiveText = /RESISTOR|CAPACITOR|INDUCTOR|FERRITE|FUSE|ZENER|ZENOR|DIODE|LED|MLCC|BEAD|CHOKE|01005|0201|0402|0603|0805|1206|1210|1812|2010|2512|SOD-123|SOD-323|SOD-523|SOD-923|SMA|SMB|SMC|MINIMELF|MELF|SMF|DO-35|DO-41|CD32|CD43|CD54|CD75|CD104|CD105|SWPA|NR4018|NR3015/i.test(textToCheck)
-    || /\b\d+(?:\.\d+)?\s*(?:[KMR]|OHM|OHMS|Ω)\b/i.test(textToCheck)
-    || /\b\d+[KMR]\d*\b/i.test(textToCheck)
+    || /\b\d+(?:\.\d+)?\s*(?:[KMRE]|OHM|OHMS|Ω)\b/i.test(textToCheck)
+    || /\b\d+[KMRE]\d*\b/i.test(textToCheck)
     || /\b\d+(?:\.\d+)?\s*(?:[PNU]?F|UF|PF|NF)\b/i.test(textToCheck)
     || /\b\d+(?:\.\d+)?\s*(?:[UNM]?H|UH|NH|MH)\b/i.test(textToCheck)
-    || /(?:^|[^a-zA-Z0-9])[RC]_(\d{4})(?=[^a-zA-Z0-9]|$)/i.test(textToCheck)
-    || /(?:^|[^a-zA-Z0-9])[RC](\d{4})(?=[^a-zA-Z0-9]|$)/i.test(textToCheck)
+    || /(?:^|[^a-zA-Z0-9])[RC]_?(\d{4})(?=[^a-zA-Z0-9]|$)/i.test(textToCheck)
     || /CP_ELEC|CP_RADIAL|RADIAL|AXIAL/i.test(textToCheck)
-    || /RES_SMD|CAP_SMD|IND_SMD|RESISTOR_SMD|CAPACITOR_SMD|INDUCTOR_SMD|DIODE_SMD/i.test(textToCheck);
+    || /RES_SMD|CAP_SMD|IND_SMD|RESISTOR_SMD|CAPACITOR_SMD|INDUCTOR_SMD|DIODE_SMD|SMD_CERAMIC_CAPACITOR|CERAMIC_CAPACITOR|SMD_RESISTOR|CHIP_RESISTOR/i.test(textToCheck);
 
   if (isPassivePrefix || isPassiveText) {
     const isArray = /ARRAY|RPACK|EXB|CAY/i.test(textToCheck)
@@ -1545,12 +1550,13 @@ function estimateComponentPads(item) {
   }
 
   // 11. QFN, DFN, UDFN, WDFN Packages (Leads + Thermal Exposed Pad)
-  const mQfn = fp.match(/\b(QFN|DFN|UDFN|WDFN|VQFN|WQFN|HVQFN)[-_]?(\d+)(?=[^0-9a-zA-Z]|$)/i);
+  const mQfn = fp.match(/\b(TQFN|QFN|DFN|UDFN|WDFN|VQFN|WQFN|HVQFN|MLF)[-_]?(\d+)(?:[-_](\d+)?(?:EP)?)?(?=[^0-9a-zA-Z]|$)/i);
   if (mQfn) {
     const pkg = mQfn[1].toUpperCase();
     const leads = parseInt(mQfn[2]);
-    const hasEp = !pkg.includes('UDFN');
-    const totalPads = leads + (hasEp ? 1 : 0);
+    const hasEp = !pkg.includes('UDFN') || /EP/i.test(fp);
+    const epCount = mQfn[3] ? parseInt(mQfn[3]) : (hasEp ? 1 : 0);
+    const totalPads = leads + epCount;
     return {
       pads_per_unit: totalPads,
       pad_type: 'SMD',
@@ -1561,7 +1567,7 @@ function estimateComponentPads(item) {
       resolution_source: `${pkg} Lead Parser`,
       datasheet_url: dsUrl,
       google_pinout_url: pinoutUrl,
-      notes: `${leads} leads${hasEp ? ' + 1 thermal ground pad' : ''}`
+      notes: `${leads} leads${hasEp ? ' + thermal ground pad' : ''}`
     };
   }
 
@@ -1588,16 +1594,15 @@ function estimateComponentPads(item) {
   let mHdr = fp.match(/(?:PinHeader|IDC[-_]Header|Header|Pin_Header|Connector_PinHeader|Conn|JST|TerminalBlock)[-_]?(?:[A-Za-z0-9]+[-_])*(?:0?(\d+)[xX]0?(\d+)|0?(\d+)[-_]?P(?:in)?)/i);
   if (!mHdr) mHdr = fp.match(/(?:^|[^0-9a-zA-Z])0?(\d+)[xX]0?(\d+)(?=[^0-9a-zA-Z]|$)/);
   if (!mHdr) mHdr = desc.match(/(?:^|[^0-9a-zA-Z])0?(\d+)[xX]0?(\d+)(?=[^0-9a-zA-Z]|$)/);
-  if (!mHdr) mHdr = textToCheck.match(/\b(\d+)[-_]?(?:pin|way|pos|p)\b/i);
+  if (!mHdr) mHdr = textToCheck.match(/\b(\d+)\s*[-_]?\s*(?:pin|way|pos|p|pole|terminal|contact)\b/i);
 
   if (mHdr && (['J', 'P', 'CONN', 'HDR', 'CN', 'TB'].includes(desPrefix) || /HEADER|CONN|JST|TERMINAL|MOLEX|PLUG|SOCKET|JACK|PIN/i.test(textToCheck))) {
     let pads = 2;
-    if (mHdr[2]) {
+    if (mHdr[1] && mHdr[2]) {
       pads = parseInt(mHdr[1]) * parseInt(mHdr[2]);
-    } else if (mHdr[3]) {
-      pads = parseInt(mHdr[3]);
     } else {
-      pads = parseInt(mHdr[1]);
+      const valid = [mHdr[1], mHdr[2], mHdr[3]].filter(g => g != null && !isNaN(parseInt(g)));
+      pads = valid.length > 0 ? parseInt(valid[0]) : 2;
     }
     const isTht = !/smd|smt/i.test(fp);
     return {
@@ -1614,7 +1619,25 @@ function estimateComponentPads(item) {
     };
   }
 
-  // 14. Transistors / Triacs
+  // 14. Transistors / Triacs & TO Packages
+  const mTo = textToCheck.match(/TO[-_]?(220|92|247|252|263)(?:[-_](\d+))?/i);
+  if (mTo) {
+    const pads = mTo[2] ? parseInt(mTo[2]) : 3;
+    const isTht = ['220', '92', '247'].includes(mTo[1]);
+    return {
+      pads_per_unit: pads,
+      pad_type: isTht ? 'THT' : 'SMD',
+      package_name: `TO-${mTo[1]} (${pads} pins)`,
+      line_total_pads: pads * qty,
+      confidence: 0.95,
+      is_manual: false,
+      resolution_source: 'TO Package Classifier',
+      datasheet_url: dsUrl,
+      google_pinout_url: pinoutUrl,
+      notes: `Standard TO-${mTo[1]} power package (${pads} pins)`
+    };
+  }
+
   if (['Q', 'T'].includes(desPrefix) || /TRANSISTOR|MOSFET|BJT|NPN|PNP|IGBT/i.test(textToCheck)) {
     const isTht = /to-92|to-220|to-247|tht|through_hole/i.test(fp);
     return {
@@ -1622,7 +1645,7 @@ function estimateComponentPads(item) {
       pad_type: isTht ? 'THT' : 'SMD',
       package_name: 'Transistor 3-Pin',
       line_total_pads: 3 * qty,
-      confidence: 0.85,
+      confidence: 0.90,
       is_manual: false,
       resolution_source: 'Transistor Default (3 Pads)',
       datasheet_url: dsUrl,
@@ -1631,7 +1654,115 @@ function estimateComponentPads(item) {
     };
   }
 
-  // 15. Specialized Connectors
+  // 15. Specialized Electromechanical (Buzzer, LCD, Banana, Motor, IR, Hall, Joystick)
+  if (['BZ', 'SPK', 'LS', 'BEEP'].includes(desPrefix) || /BUZZER|BEEPER|SPEAKER/i.test(textToCheck)) {
+    const isTht = /rm|tht|dip|12x9|through_hole/i.test(fp);
+    return {
+      pads_per_unit: 2,
+      pad_type: isTht ? 'THT' : 'SMD',
+      package_name: 'Buzzer (2 pins)',
+      line_total_pads: 2 * qty,
+      confidence: 0.95,
+      is_manual: false,
+      resolution_source: 'Buzzer Rule',
+      datasheet_url: dsUrl,
+      google_pinout_url: pinoutUrl,
+      notes: '2-pin acoustic device'
+    };
+  }
+
+  if (/LCD1602|16X2|1602/i.test(textToCheck)) {
+    return {
+      pads_per_unit: 16,
+      pad_type: 'THT',
+      package_name: 'LCD 16x2 Display (16 pins)',
+      line_total_pads: 16 * qty,
+      confidence: 0.98,
+      is_manual: false,
+      resolution_source: 'LCD Module Standard (16 pins)',
+      datasheet_url: dsUrl,
+      google_pinout_url: pinoutUrl,
+      notes: 'Standard HD44780 16-pin character LCD header'
+    };
+  }
+
+  if (/BANANA|BINDING POST|TEST_JACK|TIP_JACK/i.test(textToCheck)) {
+    return {
+      pads_per_unit: 1,
+      pad_type: 'THT',
+      package_name: 'Banana Socket (1 pin)',
+      line_total_pads: 1 * qty,
+      confidence: 0.95,
+      is_manual: false,
+      resolution_source: 'Banana Socket Rule',
+      datasheet_url: dsUrl,
+      google_pinout_url: pinoutUrl,
+      notes: 'Single terminal PCB mount banana socket'
+    };
+  }
+
+  if (/VIBRATION MOTOR|COIN MOTOR|VIB_MOTOR/i.test(textToCheck)) {
+    const isSmd = /smd/i.test(fp);
+    return {
+      pads_per_unit: 2,
+      pad_type: isSmd ? 'SMD' : 'THT',
+      package_name: 'Vibration Motor (2 pads)',
+      line_total_pads: 2 * qty,
+      confidence: 0.95,
+      is_manual: false,
+      resolution_source: 'Vibration Motor Rule',
+      datasheet_url: dsUrl,
+      google_pinout_url: pinoutUrl,
+      notes: '2-pad motor power connection'
+    };
+  }
+
+  if (/TSOP|IR_RECEIVER|VS1838|IRM-/i.test(textToCheck)) {
+    return {
+      pads_per_unit: 3,
+      pad_type: 'THT',
+      package_name: 'IR Receiver (3 pins)',
+      line_total_pads: 3 * qty,
+      confidence: 0.95,
+      is_manual: false,
+      resolution_source: 'IR Demodulator Rule',
+      datasheet_url: dsUrl,
+      google_pinout_url: pinoutUrl,
+      notes: '3-pin infrared receiver (VCC, GND, OUT)'
+    };
+  }
+
+  if (/HALLEFFECT|HALL SENSOR|HALL_SENSOR|SS49E|A3144|49E_/i.test(textToCheck)) {
+    return {
+      pads_per_unit: 3,
+      pad_type: 'THT',
+      package_name: 'Hall Effect Sensor (3 pins)',
+      line_total_pads: 3 * qty,
+      confidence: 0.95,
+      is_manual: false,
+      resolution_source: 'Hall Sensor Rule',
+      datasheet_url: dsUrl,
+      google_pinout_url: pinoutUrl,
+      notes: '3-pin magnetic sensor'
+    };
+  }
+
+  if (/JOYSTICK/i.test(textToCheck)) {
+    return {
+      pads_per_unit: 5,
+      pad_type: 'THT',
+      package_name: 'Thumb Joystick (5 pins)',
+      line_total_pads: 5 * qty,
+      confidence: 0.92,
+      is_manual: false,
+      resolution_source: 'Joystick Module Rule',
+      datasheet_url: dsUrl,
+      google_pinout_url: pinoutUrl,
+      notes: 'Dual-axis potentiometer + push button'
+    };
+  }
+
+  // 16. Specialized Connectors
   if (/BARREL|JACK-DC/i.test(textToCheck)) {
     return {
       pads_per_unit: 3,
@@ -1678,8 +1809,8 @@ function estimateComponentPads(item) {
     };
   }
 
-  // Fallback heuristic: check if explicit pin count is in the string
-  const mPins = textToCheck.match(/\b(\d+)\s*(?:PIN|PINS|PINOUT|LEAD|LEADS|PAD|PADS|P)\b/i);
+  // Universal pin count heuristic
+  const mPins = textToCheck.match(/(?:^|[^0-9a-zA-Z])0?(\d+)\s*[-_]?\s*(?:PIN|PINS|PINOUT|LEAD|LEADS|PAD|PADS|P|WAY|POS)(?=[^0-9a-zA-Z]|$)/i);
   if (mPins) {
     const pCount = parseInt(mPins[1]);
     if (pCount >= 1 && pCount <= 200) {
@@ -1689,7 +1820,7 @@ function estimateComponentPads(item) {
         pad_type: isTht ? 'THT' : 'SMD',
         package_name: `Generic Package (${pCount} pins)`,
         line_total_pads: pCount * qty,
-        confidence: 0.80,
+        confidence: 0.85,
         is_manual: false,
         resolution_source: `Lead Count Heuristic (${pCount} Pins)`,
         datasheet_url: dsUrl,
@@ -1818,7 +1949,7 @@ function findBestHeaderRowClient(rows) {
   ];
 
   let bestRow = 0;
-  let maxScore = -1;
+  let maxScore = 0;
   const scanLimit = Math.min(25, rows.length);
 
   for (let r = 0; r < scanLimit; r++) {
@@ -1833,7 +1964,100 @@ function findBestHeaderRowClient(rows) {
     }
   }
 
-  return maxScore > 0 ? bestRow : 0;
+  return { index: bestRow, score: maxScore };
+}
+
+function inferColumnsFromContentClient(rows) {
+  const mapping = {
+    designator: -1,
+    description: -1,
+    footprint: -1,
+    quantity: -1,
+    mpn: -1,
+    value: -1
+  };
+  const sampleRows = rows.slice(0, 50);
+  const numCols = Math.max(...sampleRows.map(r => r ? r.length : 0));
+  if (numCols <= 0) return mapping;
+
+  const colScores = { designator: {}, description: {}, footprint: {}, quantity: {}, mpn: {}, value: {} };
+  const itemIndexCols = new Set();
+
+  const desPat = /^[A-Za-z]{1,4}\d+([,\s\-/]+[A-Za-z]{1,4}\d+)*$/i;
+  const valPat = /^\s*\d+(?:\.\d+)?\s*(?:[pnuU]?[fF]|[kKmMgG]?[oO]?[hH][mM]?|[kKmMrReE]|[uUnNmMgG]?[hH]|[vV]|[mM][hH][zZ]|%)\s*$/i;
+  const fpKeywords = ['01005', '0201', '0402', '0603', '0805', '1206', '1210', '1812', '2010', '2512', 'sot', 'sod', 'qfn', 'qfp', 'dip', 'soic', 'to-220', 'to-92', 'to-247', 'axial', 'radial', 'smd', 'tht', 'pitch', 'pin', 'header', 'socket', 'plug', 'connector', 'strip'];
+
+  for (let c = 0; c < numCols; c++) {
+    const vals = sampleRows.map(r => r && r[c] != null ? String(r[c]).trim() : '').filter(v => v.length > 0 && !['nan', 'null', 'none', 'undefined'].includes(v.toLowerCase()));
+    if (vals.length === 0) continue;
+    const n = vals.length;
+
+    // Check item index (1, 2, 3...)
+    const nums = vals.map(v => parseFloat(v));
+    const allNums = nums.every(v => !isNaN(v));
+    if (allNums && nums.length >= 3 && nums[0] <= 1) {
+      let isSeq = true;
+      for (let i = 1; i < nums.length; i++) {
+        if (nums[i] - nums[i - 1] !== 1) { isSeq = false; break; }
+      }
+      if (isSeq) {
+        itemIndexCols.add(c);
+        continue;
+      }
+    }
+
+    // Designator
+    const desMatches = vals.filter(v => desPat.test(v)).length;
+    colScores.designator[c] = (desMatches / n) * 100;
+
+    // Quantity
+    const qtyMatches = vals.filter(v => {
+      const flt = parseFloat(v);
+      return !isNaN(flt) && flt >= 1 && flt <= 10000 && Math.floor(flt) === flt;
+    }).length;
+    colScores.quantity[c] = itemIndexCols.has(c) ? 0 : (qtyMatches / n) * 90;
+
+    // Value
+    const valMatches = vals.filter(v => valPat.test(v)).length;
+    colScores.value[c] = (valMatches / n) * 100;
+
+    // Footprint
+    const fpMatches = vals.filter(v => fpKeywords.some(k => v.toLowerCase().includes(k))).length;
+    colScores.footprint[c] = (fpMatches / n) * 85;
+
+    // MPN
+    const mpnMatches = vals.filter(v => v.length >= 5 && /[A-Za-z]/.test(v) && /\d/.test(v) && !v.includes(' ') && !valPat.test(v) && !desPat.test(v)).length;
+    colScores.mpn[c] = (mpnMatches / n) * 75;
+
+    // Description
+    const descMatches = vals.filter(v => v.includes(' ') || v.includes('_') || v.length > 8).length;
+    colScores.description[c] = (descMatches / n) * 60;
+  }
+
+  const usedCols = new Set(itemIndexCols);
+  for (const role of ['designator', 'quantity', 'mpn', 'value', 'footprint', 'description']) {
+    const sorted = Object.entries(colScores[role]).sort((a, b) => b[1] - a[1]);
+    for (const [colStr, score] of sorted) {
+      const c = parseInt(colStr);
+      if (!usedCols.has(c) && score >= 20) {
+        mapping[role] = c;
+        usedCols.add(c);
+        break;
+      }
+    }
+  }
+
+  if (mapping.description < 0) {
+    for (let c = 0; c < numCols; c++) {
+      if (!usedCols.has(c)) {
+        mapping.description = c;
+        usedCols.add(c);
+        break;
+      }
+    }
+  }
+
+  return mapping;
 }
 
 function mapColumnTypesClient(headers) {
@@ -1842,7 +2066,8 @@ function mapColumnTypesClient(headers) {
     description: -1,
     footprint: -1,
     quantity: -1,
-    mpn: -1
+    mpn: -1,
+    value: -1
   };
 
   const isItemIndex = (norm) => {
@@ -1863,6 +2088,8 @@ function mapColumnTypesClient(headers) {
       mapping.footprint = idx;
     } else if (mapping.mpn < 0 && /mpn|mfgpart|partnumber|mfrpart|supplierandref|ordercode|mfgpn|pn|partno|sku|supplierpart/i.test(norm)) {
       mapping.mpn = idx;
+    } else if (mapping.value < 0 && /value|val/i.test(norm)) {
+      mapping.value = idx;
     } else if (mapping.description < 0 && !isItemIndex(norm) && /description|designation|value|comment|spec|partname|componentname|itemdescription|itemname|val/i.test(norm)) {
       mapping.description = idx;
     }
@@ -1871,19 +2098,17 @@ function mapColumnTypesClient(headers) {
   // Second pass for description if still missing
   if (mapping.description < 0) {
     headers.forEach((h, idx) => {
-      if (idx === mapping.designator || idx === mapping.quantity || idx === mapping.footprint || idx === mapping.mpn) return;
+      if (idx === mapping.designator || idx === mapping.quantity || idx === mapping.footprint || idx === mapping.mpn || idx === mapping.value) return;
       const norm = String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (!isItemIndex(norm) && /name|title|summary|device/i.test(norm)) {
+      if (!isItemIndex(norm) && /name|title|summary|device|comment/i.test(norm)) {
         mapping.description = idx;
       }
     });
   }
 
-  // Fallbacks if not recognized
-  if (mapping.designator < 0) mapping.designator = 1;
-  if (mapping.description < 0) mapping.description = 2;
-  if (mapping.footprint < 0) mapping.footprint = 3;
-  if (mapping.quantity < 0) mapping.quantity = 4;
+  if (mapping.description < 0 && mapping.value >= 0) {
+    mapping.description = mapping.value;
+  }
 
   return mapping;
 }
@@ -1993,11 +2218,23 @@ function parseBomClient(data, filename = '') {
     return { status: 'error', message: 'No readable rows found in BOM file', items: [] };
   }
 
-  const headerIdx = findBestHeaderRowClient(rawRows);
-  const rawHeaders = (rawRows[headerIdx] || []).map(h => String(h || '').trim());
-  const mapping = mapColumnTypesClient(rawHeaders);
+  const headerInfo = findBestHeaderRowClient(rawRows);
+  const hasHeader = headerInfo.score > 0;
+  const headerIdx = hasHeader ? headerInfo.index : -1;
+  const rawHeaders = hasHeader ? (rawRows[headerIdx] || []).map(h => String(h || '').trim()) : [];
+  let mapping = hasHeader ? mapColumnTypesClient(rawHeaders) : { designator: -1, description: -1, footprint: -1, quantity: -1, mpn: -1, value: -1 };
+
+  if (!hasHeader || mapping.designator < 0 || (mapping.footprint < 0 && mapping.description < 0)) {
+    const inferred = inferColumnsFromContentClient(rawRows);
+    for (const k of ['designator', 'description', 'footprint', 'quantity', 'mpn', 'value']) {
+      if (mapping[k] < 0 && inferred[k] >= 0) {
+        mapping[k] = inferred[k];
+      }
+    }
+  }
 
   const desIdx = mapping.designator;
+  const valIdx = mapping.value;
   const descIdx = mapping.description;
   const fpIdx = mapping.footprint;
   const qtyIdx = mapping.quantity;
@@ -2005,21 +2242,30 @@ function parseBomClient(data, filename = '') {
 
   const items = [];
   let totalComponents = 0;
+  const startRow = hasHeader ? headerIdx + 1 : 0;
 
-  for (let i = headerIdx + 1; i < rawRows.length; i++) {
+  for (let i = startRow; i < rawRows.length; i++) {
     const row = rawRows[i];
     if (!row || row.length === 0) continue;
 
-    const des = desIdx >= 0 && row[desIdx] ? String(row[desIdx]).trim() : '';
-    const desc = descIdx >= 0 && row[descIdx] ? String(row[descIdx]).trim() : '';
-    const fp = fpIdx >= 0 && row[fpIdx] ? String(row[fpIdx]).trim() : '';
-    const mpn = mpnIdx >= 0 && row[mpnIdx] ? String(row[mpnIdx]).trim() : '';
+    const des = desIdx >= 0 && row[desIdx] != null ? String(row[desIdx]).trim() : '';
+    const rawVal = valIdx >= 0 && row[valIdx] != null ? String(row[valIdx]).trim() : '';
+    const rawDesc = descIdx >= 0 && row[descIdx] != null ? String(row[descIdx]).trim() : '';
+    const fp = fpIdx >= 0 && row[fpIdx] != null ? String(row[fpIdx]).trim() : '';
+    const mpn = mpnIdx >= 0 && row[mpnIdx] != null ? String(row[mpnIdx]).trim() : '';
+
+    let desc = rawDesc;
+    if (rawVal && rawDesc) {
+      desc = rawVal.toLowerCase().includes(rawDesc.toLowerCase()) || rawDesc.toLowerCase().includes(rawVal.toLowerCase()) ? rawDesc : `${rawVal} ${rawDesc}`.trim();
+    } else if (rawVal) {
+      desc = rawVal;
+    }
 
     if (!des && !desc) continue;
 
-    const normRow = `${des} ${desc}`.toLowerCase();
-    if (normRow.includes('designator') && (normRow.includes('description') || normRow.includes('refdes'))) continue;
-    if (/^(total components|total parts|line count|summary|grand total):/i.test(normRow)) continue;
+    const fullRow = `${des} ${desc} ${fp} ${mpn}`.toLowerCase();
+    if (fullRow.includes('designator') && (fullRow.includes('description') || fullRow.includes('refdes'))) continue;
+    if (/(total components|total parts|line count|summary|grand total|total bom cost):/i.test(fullRow)) continue;
 
     let qty = 1;
     if (qtyIdx >= 0 && row[qtyIdx] != null && String(row[qtyIdx]).trim() !== '') {
