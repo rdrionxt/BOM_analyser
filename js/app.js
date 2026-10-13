@@ -1185,6 +1185,7 @@ function renderCanvas() {
 // ==================== BOM PAD ENGINE & DATASHEET RESOLVER ====================
 
 const KNOWN_MPNS_CLIENT = {
+  'STM32F446RET6': { pads: 64, type: 'SMD', package: 'LQFP-64' },
   'STM32F446RET': { pads: 64, type: 'SMD', package: 'LQFP-64' },
   'STM32F103C8T': { pads: 48, type: 'SMD', package: 'LQFP-48' },
   'ATMEGA328P-AU': { pads: 32, type: 'SMD', package: 'TQFP-32' },
@@ -1192,13 +1193,18 @@ const KNOWN_MPNS_CLIENT = {
   'ESP32-WROOM': { pads: 39, type: 'SMD', package: 'Module-38+EP' },
   'RP2040': { pads: 57, type: 'SMD', package: 'QFN-56+EP' },
   'AP7366': { pads: 5, type: 'SMD', package: 'SOT-23-5' },
+  'LM73100RPWR': { pads: 10, type: 'SMD', package: 'VQFN-10' },
   'LM73100': { pads: 10, type: 'SMD', package: 'VQFN-10' },
+  'TPS63700DRCR': { pads: 11, type: 'SMD', package: 'VSON-10+EP' },
   'TPS63700': { pads: 11, type: 'SMD', package: 'VSON-10+EP' },
+  'BQ25306RTER': { pads: 17, type: 'SMD', package: 'WQFN-16+EP' },
   'BQ25306': { pads: 17, type: 'SMD', package: 'WQFN-16+EP' },
   'MPQ3425': { pads: 15, type: 'SMD', package: 'QFN-14+EP' },
+  'TPS564252DRLR': { pads: 6, type: 'SMD', package: 'SOT-563' },
   'TPS564252': { pads: 6, type: 'SMD', package: 'SOT-563' },
   'AMS1117': { pads: 4, type: 'SMD', package: 'SOT-223' },
   'LM1117': { pads: 4, type: 'SMD', package: 'SOT-223' },
+  'VRB1205YMD5WR3': { pads: 6, type: 'THT', package: 'DIP-6 DC-DC' },
   'VRB1205': { pads: 6, type: 'THT', package: 'DIP-6 DC-DC' },
   'OPA1622': { pads: 11, type: 'SMD', package: 'SON-10+EP' },
   'PCM5102A': { pads: 20, type: 'SMD', package: 'TSSOP-20' },
@@ -1210,14 +1216,19 @@ const KNOWN_MPNS_CLIENT = {
   'NX5L2750': { pads: 10, type: 'SMD', package: 'XQFN-10' },
   'D3V3XA4B10LP': { pads: 10, type: 'SMD', package: 'UDFN-10' },
   'STL6P3LLH6': { pads: 8, type: 'SMD', package: 'PowerFLAT-5x6' },
+  'BC847B': { pads: 3, type: 'SMD', package: 'SOT-23' },
   'BC847': { pads: 3, type: 'SMD', package: 'SOT-23' },
   'SS34': { pads: 2, type: 'SMD', package: 'SMA' },
   'LL4148': { pads: 2, type: 'SMD', package: 'MiniMELF' },
+  '1N4148': { pads: 2, type: 'THT', package: 'DO-35' },
   'SL02': { pads: 2, type: 'SMD', package: 'SMF' },
+  'G6K2FYTRDC5': { pads: 8, type: 'SMD', package: 'SMD Relay 8-pin' },
   'G6K': { pads: 8, type: 'SMD', package: 'SMD Relay 8-pin' },
   '1048': { pads: 4, type: 'THT', package: 'Battery Clip 4-pin' },
   '54-00174': { pads: 4, type: 'SMD', package: 'Audio Jack 4-pin' },
+  '5400174': { pads: 4, type: 'SMD', package: 'Audio Jack 4-pin' },
   'NRJ4HH': { pads: 4, type: 'THT', package: 'Neutrik 1/4in Jack 4-pin' },
+  'MICROSDCARD': { pads: 13, type: 'SMD', package: 'MicroSD Socket' },
   'MICROSD': { pads: 13, type: 'SMD', package: 'MicroSD Socket' }
 };
 
@@ -1264,46 +1275,91 @@ function estimateComponentPads(item) {
     }
   }
 
-  // 2. Resistors, Capacitors, Inductors, Diodes, Ferrite Beads, LEDs (Straightforward 2-pad)
-  const isPassivePrefix = ['R', 'C', 'L', 'D', 'FB', 'F', 'Z', 'LED'].includes(desPrefix);
-  const isPassiveText = /RESISTOR|CAPACITOR|INDUCTOR|FERRITE|FUSE|ZENER|DIODE|LED|MLCC|0603|0805|0402|1206|1210|1812|2010|2512|SOD-123|SOD-323|SMA|SMB|SMC|MINIMELF|MELF|SMF/i.test(textToCheck);
+  // 2. Potentiometers / Trimmers
+  if (['RV', 'POT'].includes(desPrefix) || /POTENTIOMETER|TRIMMER|TRIMPOT|3296/i.test(textToCheck)) {
+    return {
+      pads_per_unit: 3,
+      pad_type: /3296|vertical/i.test(fp) ? 'THT' : 'SMD',
+      package_name: 'Trimmer / Potentiometer',
+      line_total_pads: 3 * qty,
+      confidence: 1.0,
+      is_manual: false,
+      resolution_source: 'Potentiometer Rule (3 Pins)',
+      datasheet_url: dsUrl,
+      google_pinout_url: pinoutUrl,
+      notes: '3-terminal variable resistor'
+    };
+  }
+
+  // 3. Resistors, Capacitors, Inductors, Diodes, Ferrite Beads, LEDs
+  const isPassivePrefix = [
+    'R', 'C', 'L', 'D', 'FB', 'F', 'Z', 'LED',
+    'RN', 'RA', 'RP', 'RES', 'CAP', 'IND', 'DIO', 'DIODE', 'CR', 'RT', 'NTC', 'PTC', 'MOV', 'PR', 'TR'
+  ].includes(desPrefix) || /^(R|C|L|D|FB|F|Z|LED|RN|RA|RP|RES|CAP|IND|DIO|CR|RT|NTC|PTC)\d*$/i.test(firstDes);
+
+  const isPassiveText = /RESISTOR|CAPACITOR|INDUCTOR|FERRITE|FUSE|ZENER|ZENOR|DIODE|LED|MLCC|BEAD|CHOKE|01005|0201|0402|0603|0805|1206|1210|1812|2010|2512|SOD-123|SOD-323|SOD-523|SOD-923|SMA|SMB|SMC|MINIMELF|MELF|SMF|DO-35|DO-41|CD32|CD43|CD54|CD75|CD104|CD105|SWPA|NR4018|NR3015/i.test(textToCheck)
+    || /\b\d+(?:\.\d+)?\s*(?:[KMR]|OHM|OHMS|Ω)\b/i.test(textToCheck)
+    || /\b\d+[KMR]\d*\b/i.test(textToCheck)
+    || /\b\d+(?:\.\d+)?\s*(?:[PNU]?F|UF|PF|NF)\b/i.test(textToCheck)
+    || /\b\d+(?:\.\d+)?\s*(?:[UNM]?H|UH|NH|MH)\b/i.test(textToCheck)
+    || /(?:^|[^a-zA-Z0-9])[RC]_(\d{4})(?=[^a-zA-Z0-9]|$)/i.test(textToCheck)
+    || /(?:^|[^a-zA-Z0-9])[RC](\d{4})(?=[^a-zA-Z0-9]|$)/i.test(textToCheck)
+    || /CP_ELEC|CP_RADIAL|RADIAL|AXIAL/i.test(textToCheck)
+    || /RES_SMD|CAP_SMD|IND_SMD|RESISTOR_SMD|CAPACITOR_SMD|INDUCTOR_SMD|DIODE_SMD/i.test(textToCheck);
 
   if (isPassivePrefix || isPassiveText) {
-    if (/ARRAY|RPACK|NET|RN|EXB|CAY/i.test(textToCheck)) {
-      const mArr = textToCheck.match(/(\d+)X(\d+)|(\d+)[-_]?(?:PIN|RES|WAY)/);
+    const isArray = /ARRAY|RPACK|EXB|CAY/i.test(textToCheck)
+      || /\b(RN|RP|RA|R-NET|RES_NET)\b/i.test(textToCheck)
+      || ['RN', 'RA', 'RP'].includes(desPrefix);
+
+    if (isArray) {
+      const mArr = textToCheck.match(/(\d+)[Xx](\d+)|(\d+)[-_]?(?:PIN|RES|WAY|PAD)/i);
+      let count = 8;
       if (mArr) {
-        const count = parseInt(mArr[1] || mArr[3]) * 2;
-        return {
-          pads_per_unit: count,
-          pad_type: 'SMD',
-          package_name: `Resistor Array (${count}-pad)`,
-          line_total_pads: count * qty,
-          confidence: 0.95,
-          is_manual: false,
-          resolution_source: 'Resistor Network Rule',
-          datasheet_url: dsUrl,
-          google_pinout_url: pinoutUrl,
-          notes: `Multi-channel array (${count} pads)`
-        };
+        if (mArr[1] && mArr[2]) {
+          const g1 = parseInt(mArr[1]);
+          const g2 = parseInt(mArr[2]);
+          count = (g2 > 20 || [402, 603, 805, 1206, 1608, 2012].includes(g2)) ? g1 * 2 : g1 * g2;
+        } else if (mArr[3]) {
+          count = parseInt(mArr[3]);
+        }
       }
+      return {
+        pads_per_unit: count,
+        pad_type: 'SMD',
+        package_name: `Resistor Array (${count}-pad)`,
+        line_total_pads: count * qty,
+        confidence: 0.95,
+        is_manual: false,
+        resolution_source: 'Array Heuristic',
+        datasheet_url: dsUrl,
+        google_pinout_url: pinoutUrl,
+        notes: `Multi-channel array (${count} pads)`
+      };
     }
 
-    const isTht = /radial|tht|through_hole|dip|axial/i.test(fp);
+    const isTht = /radial|tht|through_hole|dip|axial|do-35|do-41/i.test(fp);
+    let pkg = 'Chip 2-Pad';
+    const mPkg = fp.match(/\b(01005|0201|0402|0603|0805|1206|1210|2512)\b/i);
+    if (mPkg) pkg = `SMD ${mPkg[1]}`;
+    else if (/SOD/i.test(fp)) pkg = 'SOD Diode';
+    else if (/CP_ELEC/i.test(fp)) pkg = 'Electrolytic Cap';
+
     return {
       pads_per_unit: 2,
       pad_type: isTht ? 'THT' : 'SMD',
-      package_name: isTht ? 'THT 2-Pin Radial' : 'SMD Chip 2-Pad',
+      package_name: pkg,
       line_total_pads: 2 * qty,
       confidence: 1.0,
       is_manual: false,
       resolution_source: 'Standard 2-Terminal Passive Rule',
       datasheet_url: dsUrl,
       google_pinout_url: pinoutUrl,
-      notes: 'Standard 2-pad passive'
+      notes: 'Standard 2-pad passive (SMD/THT)'
     };
   }
 
-  // 3. Testpoints, Solder Jumpers, Fiducials
+  // 4. Testpoints, Solder Jumpers, Fiducials
   if (desPrefix === 'TP' || textToCheck.includes('TESTPOINT')) {
     return {
       pads_per_unit: 1,
@@ -1312,7 +1368,7 @@ function estimateComponentPads(item) {
       line_total_pads: 1 * qty,
       confidence: 1.0,
       is_manual: false,
-      resolution_source: 'Testpoint (1 Pad)',
+      resolution_source: 'Testpoint Rule (1 Pad)',
       datasheet_url: dsUrl,
       google_pinout_url: pinoutUrl,
       notes: 'Single test probe pad'
@@ -1336,50 +1392,53 @@ function estimateComponentPads(item) {
     };
   }
 
-  // 4. Potentiometers / Trimmers
-  if (['RV', 'POT', 'VR'].includes(desPrefix) || textToCheck.includes('POTENTIOMETER') || textToCheck.includes('3296')) {
+  if (/FIDUCIAL|LOGO/i.test(textToCheck)) {
     return {
-      pads_per_unit: 3,
-      pad_type: 'THT',
-      package_name: 'Trimmer / Potentiometer',
-      line_total_pads: 3 * qty,
+      pads_per_unit: 0,
+      pad_type: 'SMD',
+      package_name: 'Fiducial / Marker',
+      line_total_pads: 0,
       confidence: 1.0,
       is_manual: false,
-      resolution_source: 'Potentiometer (3 Pins)',
+      resolution_source: 'Optical Marker (0 Pads)',
       datasheet_url: dsUrl,
       google_pinout_url: pinoutUrl,
-      notes: '3-terminal variable resistor'
+      notes: 'Non-soldered optical marker'
     };
   }
 
-  // 5. Switches & Push Buttons
-  if (['SW', 'BTN', 'KEY'].includes(desPrefix) || textToCheck.includes('SWITCH') || textToCheck.includes('PUSH')) {
+  // 5. Push Buttons / Tact Switches
+  if (['SW', 'BTN', 'KEY'].includes(desPrefix) || /SWITCH|PUSH/i.test(textToCheck)) {
+    let pads = 4;
+    if (/SPDT|3PIN/i.test(textToCheck)) pads = 3;
+    else if (/DPDT|6PIN/i.test(textToCheck)) pads = 6;
+    const isSmd = /SMD|SKRK|TACT/i.test(textToCheck);
     return {
-      pads_per_unit: 4,
-      pad_type: /SMD|SKRK|TACT/i.test(textToCheck) ? 'SMD' : 'THT',
-      package_name: 'Tact Switch 4-Pin',
-      line_total_pads: 4 * qty,
+      pads_per_unit: pads,
+      pad_type: isSmd ? 'SMD' : 'THT',
+      package_name: `Tact Switch (${pads} pins)`,
+      line_total_pads: pads * qty,
       confidence: 0.95,
       is_manual: false,
-      resolution_source: 'Tact Switch (4 Pins)',
+      resolution_source: `Tact Switch (${pads} pins)`,
       datasheet_url: dsUrl,
       google_pinout_url: pinoutUrl,
-      notes: 'Standard tactile button'
+      notes: `Push button switch (${pads} pads)`
     };
   }
 
   // 6. Crystals & Oscillators
-  if (['Y', 'X', 'XTAL'].includes(desPrefix) || textToCheck.includes('CRYSTAL')) {
+  if (['Y', 'X', 'XTAL'].includes(desPrefix) || /CRYSTAL|RESONATOR/i.test(textToCheck)) {
     const is4Pin = /4PIN|4P|3225|2016|2520|5032|7050|GND/i.test(fp);
     const pads = is4Pin ? 4 : 2;
     return {
       pads_per_unit: pads,
-      pad_type: 'SMD',
+      pad_type: /SMD/i.test(fp) ? 'SMD' : 'THT',
       package_name: is4Pin ? 'SMD 4-Pad Crystal' : '2-Pin Crystal',
       line_total_pads: pads * qty,
       confidence: 0.95,
       is_manual: false,
-      resolution_source: `Crystal (${pads} pads)`,
+      resolution_source: `Crystal Rule (${pads} pads)`,
       datasheet_url: dsUrl,
       google_pinout_url: pinoutUrl,
       notes: `Resonator/crystal (${pads} pads)`
@@ -1404,15 +1463,33 @@ function estimateComponentPads(item) {
       line_total_pads: pads * qty,
       confidence: 0.98,
       is_manual: false,
-      resolution_source: 'SOT Classifier',
+      resolution_source: 'SOT Package Classifier',
       datasheet_url: dsUrl,
       google_pinout_url: pinoutUrl,
       notes: `Small outline package (${pads} pads)`
     };
   }
 
-  // 8. SOIC, SOP, SSOP, TSSOP, MSOP, DIP
-  const mSoic = fp.match(/\b(SOIC|TSSOP|SSOP|MSOP|SOP|DIP|PDIP)[-_]?(\d+)(?:W)?\b/i);
+  const mSc = fp.match(/SC[-_]?(\d+)(?:[-_](\d+))?/i);
+  if (mSc) {
+    const sub = mSc[2];
+    const pads = sub ? parseInt(sub) : 5;
+    return {
+      pads_per_unit: pads,
+      pad_type: 'SMD',
+      package_name: `SC-70 (${pads} pins)`,
+      line_total_pads: pads * qty,
+      confidence: 0.95,
+      is_manual: false,
+      resolution_source: 'SC-70 Classifier',
+      datasheet_url: dsUrl,
+      google_pinout_url: pinoutUrl,
+      notes: `Miniature SMD package (${pads} pads)`
+    };
+  }
+
+  // 8. SOIC, SOP, SSOP, TSSOP, MSOP, DIP IC Packages
+  const mSoic = fp.match(/\b(SOIC|TSSOP|SSOP|MSOP|SOP|DIP|PDIP)[-_]?(\d+)(?:W)?(?=[^0-9a-zA-Z]|$)/i);
   if (mSoic) {
     const pkg = mSoic[1].toUpperCase();
     const pads = parseInt(mSoic[2]);
@@ -1430,8 +1507,8 @@ function estimateComponentPads(item) {
     };
   }
 
-  // 9. QFP, LQFP, TQFP
-  const mQfp = fp.match(/\b(LQFP|TQFP|PQFP|QFP|VQFP)[-_]?(\d+)\b/i);
+  // 9. QFP, LQFP, TQFP, PQFP, VQFP Packages
+  const mQfp = fp.match(/\b(LQFP|TQFP|PQFP|QFP|VQFP)[-_]?(\d+)(?=[^0-9a-zA-Z]|$)/i);
   if (mQfp) {
     const pkg = mQfp[1].toUpperCase();
     const pads = parseInt(mQfp[2]);
@@ -1449,7 +1526,7 @@ function estimateComponentPads(item) {
     };
   }
 
-  // 10. IPC Standard Lead Strings (e.g. SON50P300X400X100-15N)
+  // 10. IPC Standard Lead Strings
   const mIpc = fp.match(/[-_](\d+)N(?:[-_]|$)/);
   if (mIpc) {
     const pads = parseInt(mIpc[1]);
@@ -1467,8 +1544,8 @@ function estimateComponentPads(item) {
     };
   }
 
-  // 11. QFN, DFN, UDFN (Leads + Thermal Exposed Pad)
-  const mQfn = fp.match(/\b(QFN|DFN|UDFN|WDFN|VQFN|WQFN|HVQFN)[-_]?(\d+)\b/i);
+  // 11. QFN, DFN, UDFN, WDFN Packages (Leads + Thermal Exposed Pad)
+  const mQfn = fp.match(/\b(QFN|DFN|UDFN|WDFN|VQFN|WQFN|HVQFN)[-_]?(\d+)(?=[^0-9a-zA-Z]|$)/i);
   if (mQfn) {
     const pkg = mQfn[1].toUpperCase();
     const leads = parseInt(mQfn[2]);
@@ -1488,8 +1565,8 @@ function estimateComponentPads(item) {
     };
   }
 
-  // 12. BGA / CSP
-  const mBga = fp.match(/\b(BGA|FBGA|VFBGA|LFBGA|WLCSP|CSP)[-_]?(\d+)\b/i);
+  // 12. Ball Grid Array (BGA / CSP)
+  const mBga = fp.match(/\b(BGA|FBGA|VFBGA|LFBGA|WLCSP|CSP)[-_]?(\d+)(?=[^0-9a-zA-Z]|$)/i);
   if (mBga) {
     const pkg = mBga[1].toUpperCase();
     const balls = parseInt(mBga[2]);
@@ -1508,32 +1585,38 @@ function estimateComponentPads(item) {
   }
 
   // 13. Headers & Connectors (Rows x Cols)
-  let mHdr = fp.match(/(?:PinHeader|IDC[-_]Header|Header|Pin_Header|Connector_PinHeader|Conn|JST)[-_]?(?:[A-Za-z0-9]+[-_])?(\d+)x0?(\d+)/i);
-  if (!mHdr) mHdr = desc.match(/Conn[-_]0?(\d+)x0?(\d+)/i);
-  if (!mHdr) mHdr = fp.match(/\b(\d+)x0?(\d+)\b/);
+  let mHdr = fp.match(/(?:PinHeader|IDC[-_]Header|Header|Pin_Header|Connector_PinHeader|Conn|JST|TerminalBlock)[-_]?(?:[A-Za-z0-9]+[-_])*(?:0?(\d+)[xX]0?(\d+)|0?(\d+)[-_]?P(?:in)?)/i);
+  if (!mHdr) mHdr = fp.match(/(?:^|[^0-9a-zA-Z])0?(\d+)[xX]0?(\d+)(?=[^0-9a-zA-Z]|$)/);
+  if (!mHdr) mHdr = desc.match(/(?:^|[^0-9a-zA-Z])0?(\d+)[xX]0?(\d+)(?=[^0-9a-zA-Z]|$)/);
+  if (!mHdr) mHdr = textToCheck.match(/\b(\d+)[-_]?(?:pin|way|pos|p)\b/i);
 
-  if (mHdr && (['J', 'P', 'CONN', 'HDR'].includes(desPrefix) || /HEADER|CONN|JST/i.test(textToCheck))) {
-    const rows = parseInt(mHdr[1]);
-    const cols = parseInt(mHdr[2]);
-    const pads = rows * cols;
+  if (mHdr && (['J', 'P', 'CONN', 'HDR', 'CN', 'TB'].includes(desPrefix) || /HEADER|CONN|JST|TERMINAL|MOLEX|PLUG|SOCKET|JACK|PIN/i.test(textToCheck))) {
+    let pads = 2;
+    if (mHdr[2]) {
+      pads = parseInt(mHdr[1]) * parseInt(mHdr[2]);
+    } else if (mHdr[3]) {
+      pads = parseInt(mHdr[3]);
+    } else {
+      pads = parseInt(mHdr[1]);
+    }
     const isTht = !/smd|smt/i.test(fp);
     return {
       pads_per_unit: pads,
       pad_type: isTht ? 'THT' : 'SMD',
-      package_name: `Header ${rows}x${cols} (${pads} pins)`,
+      package_name: `Connector (${pads} pins)`,
       line_total_pads: pads * qty,
       confidence: 0.98,
       is_manual: false,
-      resolution_source: `Pin Header Calculator (${rows}x${cols})`,
+      resolution_source: `Connector Calculator (${pads} pins)`,
       datasheet_url: dsUrl,
       google_pinout_url: pinoutUrl,
-      notes: `${rows}x${cols} pin array (${pads} pins)`
+      notes: `Connector / header (${pads} pins)`
     };
   }
 
-  // 14. Transistors Default
-  if (['Q', 'T'].includes(desPrefix)) {
-    const isTht = /to-92|to-220|tht|through_hole/i.test(fp);
+  // 14. Transistors / Triacs
+  if (['Q', 'T'].includes(desPrefix) || /TRANSISTOR|MOSFET|BJT|NPN|PNP|IGBT/i.test(textToCheck)) {
+    const isTht = /to-92|to-220|to-247|tht|through_hole/i.test(fp);
     return {
       pads_per_unit: 3,
       pad_type: isTht ? 'THT' : 'SMD',
@@ -1544,7 +1627,7 @@ function estimateComponentPads(item) {
       resolution_source: 'Transistor Default (3 Pads)',
       datasheet_url: dsUrl,
       google_pinout_url: pinoutUrl,
-      notes: '3-pin transistor / diode pair'
+      notes: '3-pin semiconductor device'
     };
   }
 
@@ -1553,7 +1636,7 @@ function estimateComponentPads(item) {
     return {
       pads_per_unit: 3,
       pad_type: 'THT',
-      package_name: 'DC Barrel Jack (3-pin)',
+      package_name: 'DC Barrel Jack',
       line_total_pads: 3 * qty,
       confidence: 0.92,
       is_manual: false,
@@ -1578,6 +1661,42 @@ function estimateComponentPads(item) {
       google_pinout_url: pinoutUrl,
       notes: 'Signals + shield anchors'
     };
+  }
+
+  if (/MICROSD|SD_CARD/i.test(textToCheck)) {
+    return {
+      pads_per_unit: 13,
+      pad_type: 'SMD',
+      package_name: 'MicroSD Socket (9+4)',
+      line_total_pads: 13 * qty,
+      confidence: 0.92,
+      is_manual: false,
+      resolution_source: 'MicroSD Socket Standard',
+      datasheet_url: dsUrl,
+      google_pinout_url: pinoutUrl,
+      notes: '9 card signal/detect pins + 4 shield anchors'
+    };
+  }
+
+  // Fallback heuristic: check if explicit pin count is in the string
+  const mPins = textToCheck.match(/\b(\d+)\s*(?:PIN|PINS|PINOUT|LEAD|LEADS|PAD|PADS|P)\b/i);
+  if (mPins) {
+    const pCount = parseInt(mPins[1]);
+    if (pCount >= 1 && pCount <= 200) {
+      const isTht = /tht|through_hole|dip|radial|axial/i.test(fp);
+      return {
+        pads_per_unit: pCount,
+        pad_type: isTht ? 'THT' : 'SMD',
+        package_name: `Generic Package (${pCount} pins)`,
+        line_total_pads: pCount * qty,
+        confidence: 0.80,
+        is_manual: false,
+        resolution_source: `Lead Count Heuristic (${pCount} Pins)`,
+        datasheet_url: dsUrl,
+        google_pinout_url: pinoutUrl,
+        notes: `Derived from package description (${pCount} pins)`
+      };
+    }
   }
 
   // 16. Fallback: Needs Manual Feed
@@ -1844,7 +1963,14 @@ function generateSearchQueryClient(desc, fp, mpn) {
 function parseBomClient(data, filename = '') {
   let rawRows = [];
 
-  const isExcel = /\.(xlsx|xls|xlsm)$/i.test(filename) || (typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer);
+  let isZip = false;
+  let isOdf = false;
+  if (typeof ArrayBuffer !== 'undefined' && data instanceof ArrayBuffer) {
+    const u8 = new Uint8Array(data);
+    isZip = u8.length > 4 && u8[0] === 0x50 && u8[1] === 0x4B && u8[2] === 0x03 && u8[3] === 0x04;
+    isOdf = u8.length > 4 && u8[0] === 0xD0 && u8[1] === 0xCF && u8[2] === 0x11 && u8[3] === 0xE0;
+  }
+  const isExcel = isZip || isOdf || /\.(xlsx|xls|xlsm)$/i.test(filename);
 
   if (isExcel && typeof XLSX !== 'undefined') {
     try {
@@ -1857,8 +1983,9 @@ function parseBomClient(data, filename = '') {
     }
   }
 
-  if (!rawRows || rawRows.length === 0) {
-    const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
+  // Only fallback to text delimiter parser if data is NOT a binary zip/odf file
+  if ((!rawRows || rawRows.length === 0) && !isZip && !isOdf) {
+    const text = typeof data === 'string' ? data : new TextDecoder('utf-8').decode(data);
     rawRows = parseDelimitedText(text);
   }
 
@@ -1959,14 +2086,14 @@ async function uploadBomFile(file) {
     }
   }
 
-  // Client-Side Multi-Format Parser Fallback (Supports Excel .xlsx, .xls and CSV)
+  // Client-Side Multi-Format Parser Fallback (Supports Excel .xlsx, .xls and CSV via ArrayBuffer)
   const isExcel = /\.(xlsx|xls|xlsm)$/i.test(file.name);
   const reader = new FileReader();
 
   reader.onload = (e) => {
     try {
-      const bufferOrText = e.target.result;
-      const parsed = parseBomClient(bufferOrText, file.name);
+      const buffer = e.target.result;
+      const parsed = parseBomClient(buffer, file.name);
       if (parsed.status === 'success' && parsed.items.length > 0) {
         const padResults = calculateBomPadsClient(parsed.items);
         parsed.pad_analysis = padResults.summary;
@@ -1983,11 +2110,7 @@ async function uploadBomFile(file) {
     }
   };
 
-  if (isExcel) {
-    reader.readAsArrayBuffer(file);
-  } else {
-    reader.readAsText(file);
-  }
+  reader.readAsArrayBuffer(file);
 }
 
 
